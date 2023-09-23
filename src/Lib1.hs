@@ -10,6 +10,9 @@ where
 
 import Data.List (transpose)
 import DataFrame (Column (..), ColumnType (..), DataFrame (..), Value (..))
+-- isPrefixOf used in the second exercise
+import Data.Char (toLower)
+import Data.List (isPrefixOf)
 import InMemoryTables (TableName)
 
 type ErrorMessage = String
@@ -21,12 +24,31 @@ type Database = [(TableName, DataFrame)]
 -- 1) implement the function which returns a data frame by its name
 -- in provided Database list
 findTableByName :: Database -> String -> Maybe DataFrame
-findTableByName _ _ = error "findTableByName not implemented"
+findTableByName [] _ = Nothing
+findTableByName ((tableName, dataFrame) : database) givenName
+  | map toLower tableName == map toLower givenName = Just dataFrame
+  | otherwise = findTableByName database givenName
 
 -- 2) implement the function which parses a "select * from ..."
 -- sql statement and extracts a table name from the statement
+
+-- checks if the format is correct
+isValid :: String -> Bool
+isValid command = "select * from " `isPrefixOf` map toLower command
+
+-- removes ';' at the end (if needed) and returns the TableName
+extractTableName :: String -> TableName
+extractTableName command
+  | lastChar == ';' = drop 14 (init command)
+  | otherwise = drop 14 command
+  where
+    lastChar = last command
+
 parseSelectAllStatement :: String -> Either ErrorMessage TableName
-parseSelectAllStatement _ = error "parseSelectAllStatement not implemented"
+parseSelectAllStatement command
+  | null command = Left "Input is empty"
+  | isValid command = Right (extractTableName command)
+  | otherwise = Left "Invalid SELECT format"
 
 -- 3) implement the function which validates tables: checks if
 -- columns match value types, if rows sizes match columns,..
