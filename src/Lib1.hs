@@ -8,11 +8,11 @@ module Lib1
   )
 where
 
-import Data.List (transpose)
-import DataFrame (Column (..), ColumnType (..), DataFrame (..), Value (..))
 -- isPrefixOf used in the second exercise
 import Data.Char (toLower)
-import Data.List (isPrefixOf)
+import Data.List (isPrefixOf, transpose)
+import DataFrame (Column (..), ColumnType (..), DataFrame (..), Row, Value (..))
+import GHC.OldList (intercalate)
 import InMemoryTables (TableName)
 
 type ErrorMessage = String
@@ -89,5 +89,38 @@ validateDataFrame df@(DataFrame _ _) =
 -- as ascii-art table (use your imagination, there is no "correct"
 -- answer for this task!), it should respect terminal
 -- width (in chars, provided as the first argument)
+-- Example usage in renderDataFrameAsTable:
+
 renderDataFrameAsTable :: Integer -> DataFrame -> String
-renderDataFrameAsTable _ _ = error "renderDataFrameAsTable not implemented"
+renderDataFrameAsTable terminalWidth (DataFrame columns values) =
+  let numColumns = calculateNumberOfColumns columns
+      columnWidth = calculateOneColumnWidth terminalWidth numColumns
+      headerRow = generateHeaderRow columns columnWidth
+   in headerRow
+
+calculateNumberOfColumns :: [Column] -> Integer
+calculateNumberOfColumns columns =
+  let numColumns = length columns
+   in fromIntegral numColumns
+
+calculateOneColumnWidth :: Integer -> Integer -> Integer
+calculateOneColumnWidth terminalWidth numColumns =
+  terminalWidth `div` numColumns
+
+generateHeaderRow :: [Column] -> Integer -> String
+generateHeaderRow columns columnWidth =
+  let columnNames = map (\(Column name _) -> name) columns
+      formattedColumnNames = intercalate " | " (map (`formatColumn` columnWidth) columnNames)
+      separatorLine = replicate (length formattedColumnNames) '-'
+   in formattedColumnNames ++ "\n" ++ separatorLine
+
+formatColumn :: String -> Integer -> String
+formatColumn columnName width =
+  let padding = max 0 (width - fromIntegral (length columnName))
+   in columnName ++ replicate (fromIntegral padding) ' '
+
+-- ColumnName1 | ColumnName2 | ColumnName3
+-- ------------+-------------+------------
+-- Row11       | Row21       | Row31
+-- Row12       | Row22       | Row32
+-- Row13       | Row23       | Row33
