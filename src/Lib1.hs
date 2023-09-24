@@ -9,6 +9,8 @@ module Lib1
 where
 
 -- isPrefixOf used in the second exercise
+
+import Data.Bits (Bits (xor))
 import Data.Char (toLower)
 import Data.List (isPrefixOf, transpose)
 import DataFrame (Column (..), ColumnType (..), DataFrame (..), Row, Value (..))
@@ -96,7 +98,8 @@ renderDataFrameAsTable terminalWidth (DataFrame columns values) =
   let numColumns = calculateNumberOfColumns columns
       columnWidth = calculateOneColumnWidth terminalWidth numColumns
       headerRow = generateHeaderRow columns columnWidth
-   in headerRow
+      dataRows = map (generateDataRow columns columnWidth) values
+   in unlines (headerRow : dataRows)
 
 calculateNumberOfColumns :: [Column] -> Integer
 calculateNumberOfColumns columns =
@@ -118,6 +121,17 @@ formatColumn :: String -> Integer -> String
 formatColumn columnName width =
   let padding = max 0 (width - fromIntegral (length columnName))
    in columnName ++ replicate (fromIntegral padding) ' '
+
+generateDataRow :: [Column] -> Integer -> Row -> String
+generateDataRow columns columnWidth row =
+  let formattedValues = map (`formatColumn` columnWidth) (map valueToString row)
+   in intercalate " | " formattedValues
+
+valueToString :: Value -> String
+valueToString (IntegerValue x) = show x
+valueToString (StringValue x) = x
+valueToString (BoolValue x) = show x
+valueToString NullValue = "NULL"
 
 -- ColumnName1 | ColumnName2 | ColumnName3
 -- ------------+-------------+------------
