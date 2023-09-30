@@ -11,8 +11,8 @@ where
 -- isPrefixOf used in the second exercise
 
 import Data.Bits (Bits (xor))
-import Data.Char (toLower)
-import Data.List (isPrefixOf, transpose)
+import Data.Char
+import Data.List
 import DataFrame (Column (..), ColumnType (..), DataFrame (..), Row, Value (..))
 import GHC.OldList (intercalate)
 import InMemoryTables (TableName)
@@ -41,8 +41,8 @@ isValid command = "select * from " `isPrefixOf` map toLower command
 -- removes ';' at the end (if needed) and returns the TableName
 extractTableName :: String -> TableName
 extractTableName command
-  | lastChar == ';' = drop 14 (init command)
-  | otherwise = drop 14 command
+  | lastChar == ';' = dropWhile isSpace $ drop 14 (init command)
+  | otherwise = dropWhile isSpace $ drop 14 command
   where
     lastChar = last command
 
@@ -114,7 +114,7 @@ generateHeaderRow :: [Column] -> Integer -> String
 generateHeaderRow columns columnWidth =
   let columnNames = map (\(Column name _) -> name) columns
       formattedColumnNames = intercalate " | " (map (`formatColumn` columnWidth) columnNames)
-      separatorLine = intercalate "-+-" (replicate (length columnNames)(replicate (fromIntegral columnWidth) '-'))
+      separatorLine = intercalate "-+-" (replicate (length columnNames) (replicate (fromIntegral columnWidth) '-'))
    in formattedColumnNames ++ "\n" ++ separatorLine
 
 formatColumn :: String -> Integer -> String
