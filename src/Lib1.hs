@@ -1,4 +1,4 @@
-{-# OPTIONS_GHC -Wno-unused-top-binds #-}
+
 
 module Lib1
   ( parseSelectAllStatement,
@@ -11,8 +11,8 @@ where
 -- isPrefixOf used in the second exercise
 
 import Data.Bits (Bits (xor))
-import Data.Char (toLower)
-import Data.List (isPrefixOf, transpose)
+import Data.Char
+import Data.List
 import DataFrame (Column (..), ColumnType (..), DataFrame (..), Row, Value (..))
 import GHC.OldList (intercalate)
 import InMemoryTables (TableName)
@@ -41,8 +41,8 @@ isValid command = "select * from " `isPrefixOf` map toLower command
 -- removes ';' at the end (if needed) and returns the TableName
 extractTableName :: String -> TableName
 extractTableName command
-  | lastChar == ';' = drop 14 (init command)
-  | otherwise = drop 14 command
+  | lastChar == ';' = dropWhile isSpace $ drop 14 (init command)
+  | otherwise = dropWhile isSpace $ drop 14 command
   where
     lastChar = last command
 
@@ -96,7 +96,8 @@ validateDataFrame df@(DataFrame _ _) =
 renderDataFrameAsTable :: Integer -> DataFrame -> String
 renderDataFrameAsTable terminalWidth (DataFrame columns values) =
   let numColumns = calculateNumberOfColumns columns
-      columnWidth = calculateOneColumnWidth terminalWidth numColumns
+      cappedWidth = min 100 terminalWidth
+      columnWidth = calculateOneColumnWidth cappedWidth numColumns
       headerRow = generateHeaderRow columns columnWidth
       dataRows = map (generateDataRow columns columnWidth) values
    in unlines (headerRow : dataRows)
@@ -114,7 +115,7 @@ generateHeaderRow :: [Column] -> Integer -> String
 generateHeaderRow columns columnWidth =
   let columnNames = map (\(Column name _) -> name) columns
       formattedColumnNames = intercalate " | " (map (`formatColumn` columnWidth) columnNames)
-      separatorLine = intercalate "-+-" (replicate (length columnNames)(replicate (fromIntegral columnWidth) '-'))
+      separatorLine = intercalate "-+-" (replicate (length columnNames) (replicate (fromIntegral columnWidth) '-'))
    in formattedColumnNames ++ "\n" ++ separatorLine
 
 formatColumn :: String -> Integer -> String
