@@ -1,4 +1,4 @@
-{-# OPTIONS_GHC -Wno-unused-top-binds #-}
+
 
 module Lib1
   ( parseSelectAllStatement,
@@ -96,7 +96,8 @@ validateDataFrame df@(DataFrame _ _) =
 renderDataFrameAsTable :: Integer -> DataFrame -> String
 renderDataFrameAsTable terminalWidth (DataFrame columns values) =
   let numColumns = calculateNumberOfColumns columns
-      columnWidth = calculateOneColumnWidth terminalWidth numColumns
+      cappedWidth = min 100 terminalWidth
+      columnWidth = calculateOneColumnWidth cappedWidth numColumns
       headerRow = generateHeaderRow columns columnWidth
       dataRows = map (generateDataRow columns columnWidth) values
    in unlines (headerRow : dataRows)
