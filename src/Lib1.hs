@@ -114,7 +114,7 @@ generateHeaderRow :: [Column] -> Integer -> String
 generateHeaderRow columns columnWidth =
   let columnNames = map (\(Column name _) -> name) columns
       formattedColumnNames = intercalate " | " (map (`formatColumn` columnWidth) columnNames)
-      separatorLine = replicate (length formattedColumnNames) '-'
+      separatorLine = intercalate "-+-" (replicate (length columnNames)(replicate (fromIntegral columnWidth) '-'))
    in formattedColumnNames ++ "\n" ++ separatorLine
 
 formatColumn :: String -> Integer -> String
