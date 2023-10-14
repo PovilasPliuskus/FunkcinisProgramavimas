@@ -1,5 +1,3 @@
-
-
 module Lib1
   ( parseSelectAllStatement,
     findTableByName,
@@ -8,7 +6,6 @@ module Lib1
   )
 where
 
-<<<<<<< HEAD
 -- isPrefixOf used in the second exercise
 
 import Data.Bits (Bits (xor))
@@ -16,9 +13,6 @@ import Data.Char
 import Data.List
 import DataFrame (Column (..), ColumnType (..), DataFrame (..), Row, Value (..))
 import GHC.OldList (intercalate)
-=======
-import DataFrame (DataFrame (..), Row, Column (..), ColumnType (..), Value (..))
->>>>>>> 7f6d2a0be6c8e5f739adb52a8cdf58a9fe681ac8
 import InMemoryTables (TableName)
 
 type ErrorMessage = String
