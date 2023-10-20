@@ -1,5 +1,5 @@
 module DataFrame (Column (..), ColumnType (..), Value (..), Row, DataFrame (..)) where
-
+  
 data ColumnType
   = IntegerType
   | StringType
