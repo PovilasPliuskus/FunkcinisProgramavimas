@@ -11,6 +11,7 @@ where
 import Data.Char (isSpace, toUpper)
 import Data.List (isInfixOf, isPrefixOf, stripPrefix)
 import DataFrame (Column (..), ColumnType (StringType), DataFrame (DataFrame), Value (StringValue))
+import GHC.RTS.Flags (DebugFlags (stm))
 import InMemoryTables (TableName, database)
 
 type ErrorMessage = String
@@ -22,16 +23,20 @@ data ParsedStatement
   = ParsedStatement
   | ShowTables
   | ShowTable TableName -- New constructor to specify the table name
+  --            {- Columns -}  {- Table Name -}  {- MIN Exists -}  {- MIN Column -}  {- AVG Exists -}  {- AVG Column -} {- WhereAND Exists-} {- Where AND stmts -} {- Where Bool is Something exists -} {- Where Bool is Something Column -}
+  | Select [String] String Bool String Bool String Bool (ParsedStatement, ParsedStatement) Bool String
   | ColumnList [String] String
-  | BoolMin
-  | Min Column
-  | BoolAvg
-  | Avg Column
-  | BoolWhereAND
-  | WhereAND (ParsedStatement, ParsedStatement)
-  | BoolWhereBoolIsSomething
-  | WhereBoolIsSomething Column
+  | Min [String] String Bool
   deriving (Show, Eq)
+
+-- \| BoolMin
+--  | Min Column
+--  | BoolAvg
+--  | Avg Column
+--  | BoolWhereAND
+--  | WhereAND (ParsedStatement, ParsedStatement)
+--  | BoolWhereBoolIsSomething
+--  | WhereBoolIsSomething Column
 
 -- Parses user input into an entity representing a parsed
 -- statement
@@ -42,12 +47,14 @@ parseStatement stmt
   | otherwise = do
       rest <- startsWithSelect stmt
       case stripPrefix "* FROM " (dropWhile isSpace rest) of
-        Just tableName -> Right $ ColumnList (listColumns tableName InMemoryTables.database) tableName
+        Just tableName -> Right $ Min (map removeMinPrefix $ listColumns tableName InMemoryTables.database) tableName (containsMin stmt)
         Nothing ->
           let (cols, remaining) = break (== "FROM") (words rest)
            in case remaining of
-                ("FROM" : tableNameWords) -> Right $ ColumnList cols (unwords tableNameWords)
-                _ -> Left "Invalid statement: 'FROM' keyword not found."
+                ("FROM" : tableNameWords) -> Right $ Min (map removeMinPrefix cols) (unwords tableNameWords) (containsMin stmt)
+                _ -> case extractMinColumn stmt of
+                  Just columnName -> Right $ Min [removeMinPrefix columnName] columnName (containsMin stmt)
+                  Nothing -> Left "Invalid statement: 'FROM' keyword not found."
 
 -- Helper function to check if the statement is "SHOW TABLE <table-name>"
 isShowTableStatement :: String -> Bool
@@ -61,13 +68,21 @@ extractTableName stmt = drop 11 stmt
 executeStatement :: ParsedStatement -> Either ErrorMessage [String]
 executeStatement ShowTables = Right $ listTables InMemoryTables.database
 executeStatement (ShowTable tableName) = Right $ listColumns tableName InMemoryTables.database
-executeStatement (ColumnList columns tableName) = Right $ printList columns
+executeStatement (Min columns tableName bool) = Right $ printList columns ++ printBool bool ++ printTableName tableName
+-- executeStatement (ColumnList columns tableName) = Right $ printList columns
 executeStatement _ = Left "Not implemented: executeStatement"
 
 -- helper function for debugging
 printList :: [String] -> [String]
 printList [] = [] -- Base case: an empty list, return an empty list
 printList (x : xs) = x : printList xs
+
+printTableName :: String -> [String]
+printTableName str = [str, str]
+
+printBool :: Bool -> [String]
+printBool True = ["True", "True"]
+printBool False = ["False", "False"]
 
 -- Function to list columns in a table
 listColumns :: TableName -> Database -> [String]
@@ -88,6 +103,23 @@ startsWithSelect :: String -> Either ErrorMessage String
 startsWithSelect str
   | "SELECT" `isPrefixOf` map toUpper (dropWhile isSpace str) = Right (drop 6 (dropWhile isSpace str))
   | otherwise = Left "Invalid SELECT format"
+
+containsMin :: String -> Bool
+containsMin input = "MIN" `isInfixOf` (map toUpper input)
+
+extractMinColumn :: String -> Maybe String
+extractMinColumn str = case splitAt 4 str of
+  ("min(", rest) -> case break (== ')') rest of
+    (colName, "") -> Just colName
+    _ -> Nothing
+  _ -> Nothing
+
+removeMinPrefix :: String -> String
+removeMinPrefix str = case splitAt 4 str of
+  ("min(", colName) -> case reverse colName of
+    (')' : rest) -> reverse rest
+    _ -> colName
+  _ -> str
 
 -- case stripPrefix "* FROM " (dropWhile isSpace stmt) of
 --   Just tableName -> tableName
