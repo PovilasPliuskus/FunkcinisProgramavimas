@@ -27,7 +27,7 @@ data ParsedStatement
   --            {- Columns -}  {- Table Name -}  {- MIN Exists -}  {- MIN Column -}  {- AVG Exists -}  {- AVG Column -} {- WhereAND Exists-} {- Where AND stmts -} {- Where Bool is Something exists -} {- Where Bool is Something Column -}
   | Select [String] String Bool String Bool String Bool (ParsedStatement, ParsedStatement) Bool String
   | ColumnList [String] String
-  | Min [String] String Bool String Bool String Bool
+  | Min [String] String Bool String Bool String Bool String String
   deriving (Show, Eq)
 
 -- \| BoolMin
@@ -50,7 +50,6 @@ parseStatement stmt
       let (beforeFrom, afterFrom) = span (/= "FROM") (words rest)
       case afterFrom of
         "FROM" : tableNameWords -> do
-          let tableName = unwords tableNameWords
           let containsMinKeyword = containsMin stmt
           let containsAvgKeyword = containsAvg stmt
           let containsWhereAndKeyword = containsWhereAnd stmt
@@ -60,7 +59,13 @@ parseStatement stmt
           let avgColName = case extractAvgColumnName stmt of
                 Just colName -> colName
                 Nothing -> ""
-          Right $ Min (map removeMinOrAvgPrefix beforeFrom) (head tableNameWords) containsMinKeyword minColName containsAvgKeyword avgColName containsWhereAndKeyword
+          let condition1 = case extractFirstCondition stmt of
+                Just con1 -> con1
+                Nothing -> ""
+          let condition2 = case extractSecondCondition stmt of
+                Just con2 -> con2
+                Nothing -> ""
+          Right $ Min (map removeMinOrAvgPrefix beforeFrom) (head tableNameWords) containsMinKeyword minColName containsAvgKeyword avgColName containsWhereAndKeyword condition1 condition2
         _ -> Left "Invalid statement: 'FROM' keyword not found."
 
 -- Helper function to check if the statement is "SHOW TABLE <table-name>"
@@ -75,7 +80,7 @@ extractTableName stmt = drop 11 stmt
 executeStatement :: ParsedStatement -> Either ErrorMessage [String]
 executeStatement ShowTables = Right $ listTables InMemoryTables.database
 executeStatement (ShowTable tableName) = Right $ listColumns tableName InMemoryTables.database
-executeStatement (Min columns tableName boolMin minColName boolAvg avgColName boolWhereAnd) = Right $ printList columns ++ printBool boolMin ++ printTableName tableName ++ [minColName] ++ printBool boolAvg ++ [avgColName] ++ printBool boolWhereAnd
+executeStatement (Min columns tableName boolMin minColName boolAvg avgColName boolWhereAnd con1 con2) = Right $ printList columns ++ printBool boolMin ++ printTableName tableName ++ [minColName] ++ printBool boolAvg ++ [avgColName] ++ printBool boolWhereAnd ++ [con1] ++ [con2]
 -- executeStatement (ColumnList columns tableName) = Right $ printList columns
 executeStatement _ = Left "Not implemented: executeStatement"
 
@@ -149,3 +154,17 @@ isAvgColumn word = "avg(" `isPrefixOf` word
 
 cleanWord :: String -> String
 cleanWord word = reverse $ drop 1 $ reverse $ drop 4 word
+
+extractFirstCondition :: String -> Maybe String
+extractFirstCondition input =
+  case dropWhile (/= "WHERE") (words input) of
+    ("WHERE" : rest) ->
+      case break (== "AND") rest of
+        (conditions, _) -> Just (unwords conditions)
+    _ -> Nothing
+
+extractSecondCondition :: String -> Maybe String
+extractSecondCondition input =
+  case dropWhile (/= "AND") (words input) of
+    ("AND" : rest) -> Just (unwords rest)
+    _ -> Nothing
