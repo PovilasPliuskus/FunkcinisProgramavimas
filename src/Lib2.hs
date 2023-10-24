@@ -26,7 +26,7 @@ data ParsedStatement
   --            {- Columns -}  {- Table Name -}  {- MIN Exists -}  {- MIN Column -}  {- AVG Exists -}  {- AVG Column -} {- WhereAND Exists-} {- Where AND stmts -} {- Where Bool is Something exists -} {- Where Bool is Something Column -}
   | Select [String] String Bool String Bool String Bool (ParsedStatement, ParsedStatement) Bool String
   | ColumnList [String] String
-  | Min [String] String Bool
+  | Min [String] String Bool String
   deriving (Show, Eq)
 
 -- \| BoolMin
@@ -47,14 +47,22 @@ parseStatement stmt
   | otherwise = do
       rest <- startsWithSelect stmt
       case stripPrefix "* FROM " (dropWhile isSpace rest) of
-        Just tableName -> Right $ Min (map removeMinPrefix $ listColumns tableName InMemoryTables.database) tableName (containsMin stmt)
+        Just tableName -> do
+          let containsMinKeyword = containsMin stmt
+          let minColName = case extractMinColumnName stmt of
+                Just colName -> colName
+                Nothing -> ""
+          Right $ Min (map removeMinPrefix $ listColumns tableName InMemoryTables.database) tableName containsMinKeyword minColName
         Nothing ->
           let (cols, remaining) = break (== "FROM") (words rest)
            in case remaining of
-                ("FROM" : tableNameWords) -> Right $ Min (map removeMinPrefix cols) (unwords tableNameWords) (containsMin stmt)
-                _ -> case extractMinColumn stmt of
-                  Just columnName -> Right $ Min [removeMinPrefix columnName] columnName (containsMin stmt)
-                  Nothing -> Left "Invalid statement: 'FROM' keyword not found."
+                ("FROM" : tableNameWords) -> do
+                  let containsMinKeyword = containsMin stmt
+                  let minColName = case extractMinColumnName stmt of
+                        Just colName -> colName
+                        Nothing -> ""
+                  Right $ Min (map removeMinPrefix cols) (unwords tableNameWords) containsMinKeyword minColName
+                _ -> Left "Invalid statement: 'FROM' keyword not found."
 
 -- Helper function to check if the statement is "SHOW TABLE <table-name>"
 isShowTableStatement :: String -> Bool
@@ -68,7 +76,7 @@ extractTableName stmt = drop 11 stmt
 executeStatement :: ParsedStatement -> Either ErrorMessage [String]
 executeStatement ShowTables = Right $ listTables InMemoryTables.database
 executeStatement (ShowTable tableName) = Right $ listColumns tableName InMemoryTables.database
-executeStatement (Min columns tableName bool) = Right $ printList columns ++ printBool bool ++ printTableName tableName
+executeStatement (Min columns tableName bool minColName) = Right $ printList columns ++ printBool bool ++ printTableName tableName ++ [minColName]
 -- executeStatement (ColumnList columns tableName) = Right $ printList columns
 executeStatement _ = Left "Not implemented: executeStatement"
 
@@ -121,19 +129,10 @@ removeMinPrefix str = case splitAt 4 str of
     _ -> colName
   _ -> str
 
--- case stripPrefix "* FROM " (dropWhile isSpace stmt) of
---   Just tableName -> tableName
---   Nothing -> ""
-
--- startsWithAsterisk :: String -> String
--- startsWithAsterisk str
---   | "*" `isPrefixOf` (dropWhile isSpace str) = drop 1 (dropWhile isSpace str)
---   | otherwise = str
-
--- -- Extract the table name from a SELECT statement
--- extractTableNameFromSelect :: String -> (TableName, String)
--- extractTableNameFromSelect stmt
---   | "FROM" `isInfixOf` stmt =
---       let (beforeFrom, afterFrom) = break (== 'F') stmt
---        in (reverse $ dropWhile isSpace $ reverse beforeFrom, drop 4 afterFrom) -- Drop "FROM"
---   | otherwise = ("", stmt)
+extractMinColumnName :: String -> Maybe String
+extractMinColumnName input =
+  case dropWhile (/= '(') input of
+    ('(' : rest) -> case break (== ')') rest of
+      (colName, ')' : _) -> Just colName
+      _ -> Nothing
+    _ -> Nothing
