@@ -27,7 +27,7 @@ data ParsedStatement
   --            {- Columns -}  {- Table Name -}  {- MIN Exists -}  {- MIN Column -}  {- AVG Exists -}  {- AVG Column -} {- WhereAND Exists-} {- Where AND stmts -} {- Where Bool is Something exists -} {- Where Bool is Something Column -}
   | Select [String] String Bool String Bool String Bool (ParsedStatement, ParsedStatement) Bool String
   | ColumnList [String] String
-  | Min [String] String Bool String Bool String Bool String String
+  | Min [String] String Bool String Bool String Bool String String Bool
   deriving (Show, Eq)
 
 -- \| BoolMin
@@ -53,6 +53,7 @@ parseStatement stmt
           let containsMinKeyword = containsMin stmt
           let containsAvgKeyword = containsAvg stmt
           let containsWhereAndKeyword = containsWhereAnd stmt
+          let containsWhereBoolKeyword = containsWhereBool stmt
           let minColName = case extractMinColumnName stmt of
                 Just colName -> colName
                 Nothing -> ""
@@ -65,7 +66,7 @@ parseStatement stmt
           let condition2 = case extractSecondCondition stmt of
                 Just con2 -> con2
                 Nothing -> ""
-          Right $ Min (map removeMinOrAvgPrefix beforeFrom) (head tableNameWords) containsMinKeyword minColName containsAvgKeyword avgColName containsWhereAndKeyword condition1 condition2
+          Right $ Min (map removeMinOrAvgPrefix beforeFrom) (head tableNameWords) containsMinKeyword minColName containsAvgKeyword avgColName containsWhereAndKeyword condition1 condition2 containsWhereBoolKeyword
         _ -> Left "Invalid statement: 'FROM' keyword not found."
 
 -- Helper function to check if the statement is "SHOW TABLE <table-name>"
@@ -80,7 +81,7 @@ extractTableName stmt = drop 11 stmt
 executeStatement :: ParsedStatement -> Either ErrorMessage [String]
 executeStatement ShowTables = Right $ listTables InMemoryTables.database
 executeStatement (ShowTable tableName) = Right $ listColumns tableName InMemoryTables.database
-executeStatement (Min columns tableName boolMin minColName boolAvg avgColName boolWhereAnd con1 con2) = Right $ printList columns ++ printBool boolMin ++ printTableName tableName ++ [minColName] ++ printBool boolAvg ++ [avgColName] ++ printBool boolWhereAnd ++ [con1] ++ [con2]
+executeStatement (Min columns tableName boolMin minColName boolAvg avgColName boolWhereAnd con1 con2 boolWhereBool) = Right $ printList columns ++ printBool boolMin ++ printTableName tableName ++ [minColName] ++ printBool boolAvg ++ [avgColName] ++ printBool boolWhereAnd ++ [con1] ++ [con2] ++ printBool boolWhereBool
 -- executeStatement (ColumnList columns tableName) = Right $ printList columns
 executeStatement _ = Left "Not implemented: executeStatement"
 
@@ -123,7 +124,11 @@ containsAvg :: String -> Bool
 containsAvg input = "AVG" `isInfixOf` (map toUpper input)
 
 containsWhereAnd :: String -> Bool
-containsWhereAnd input = "WHERE" `isInfixOf` (map toUpper input)
+containsWhereAnd input = "AND" `isInfixOf` (map toUpper input)
+
+containsWhereBool :: String -> Bool
+containsWhereBool input =
+  "FALSE" `isInfixOf` (map toUpper input) || "TRUE" `isInfixOf` (map toUpper input)
 
 extractMinColumn :: String -> Maybe String
 extractMinColumn str = case splitAt 4 str of
