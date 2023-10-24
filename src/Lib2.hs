@@ -9,7 +9,8 @@ module Lib2
 where
 
 import Data.Char (isSpace, toUpper)
-import Data.List (isInfixOf, isPrefixOf, stripPrefix)
+import Data.List (isInfixOf, isPrefixOf, stripPrefix, tails)
+import Data.Maybe
 import DataFrame (Column (..), ColumnType (StringType), DataFrame (DataFrame), Value (StringValue))
 import GHC.RTS.Flags (DebugFlags (stm))
 import InMemoryTables (TableName, database)
@@ -26,7 +27,7 @@ data ParsedStatement
   --            {- Columns -}  {- Table Name -}  {- MIN Exists -}  {- MIN Column -}  {- AVG Exists -}  {- AVG Column -} {- WhereAND Exists-} {- Where AND stmts -} {- Where Bool is Something exists -} {- Where Bool is Something Column -}
   | Select [String] String Bool String Bool String Bool (ParsedStatement, ParsedStatement) Bool String
   | ColumnList [String] String
-  | Min [String] String Bool String Bool
+  | Min [String] String Bool String Bool String
   deriving (Show, Eq)
 
 -- \| BoolMin
@@ -53,7 +54,10 @@ parseStatement stmt
           let minColName = case extractMinColumnName stmt of
                 Just colName -> colName
                 Nothing -> ""
-          Right $ Min (map removeMinOrAvgPrefix $ listColumns tableName InMemoryTables.database) tableName containsMinKeyword minColName containsAvgKeyword
+          let avgColName = case extractAvgColumnName stmt of
+                Just colName -> colName
+                Nothing -> ""
+          Right $ Min (map removeMinOrAvgPrefix (listColumns tableName InMemoryTables.database)) tableName containsMinKeyword minColName containsAvgKeyword avgColName
         Nothing ->
           let (cols, remaining) = break (== "FROM") (words rest)
            in case remaining of
@@ -63,7 +67,10 @@ parseStatement stmt
                   let minColName = case extractMinColumnName stmt of
                         Just colName -> colName
                         Nothing -> ""
-                  Right $ Min (map removeMinOrAvgPrefix cols) (unwords tableNameWords) containsMinKeyword minColName containsAvgKeyword
+                  let avgColName = case extractAvgColumnName stmt of
+                        Just colName -> colName
+                        Nothing -> ""
+                  Right $ Min (map removeMinOrAvgPrefix cols) (unwords tableNameWords) containsMinKeyword minColName containsAvgKeyword avgColName
                 _ -> Left "Invalid statement: 'FROM' keyword not found."
 
 -- Helper function to check if the statement is "SHOW TABLE <table-name>"
@@ -78,7 +85,7 @@ extractTableName stmt = drop 11 stmt
 executeStatement :: ParsedStatement -> Either ErrorMessage [String]
 executeStatement ShowTables = Right $ listTables InMemoryTables.database
 executeStatement (ShowTable tableName) = Right $ listColumns tableName InMemoryTables.database
-executeStatement (Min columns tableName boolMin minColName boolAvg) = Right $ printList columns ++ printBool boolMin ++ printTableName tableName ++ [minColName] ++ printBool boolAvg
+executeStatement (Min columns tableName boolMin minColName boolAvg avgColName) = Right $ printList columns ++ printBool boolMin ++ printTableName tableName ++ [minColName] ++ printBool boolAvg ++ [avgColName]
 -- executeStatement (ColumnList columns tableName) = Right $ printList columns
 executeStatement _ = Left "Not implemented: executeStatement"
 
@@ -136,9 +143,16 @@ removeMinOrAvgPrefix str = case str of
     extractColumnName = takeWhile (/= ')')
 
 extractMinColumnName :: String -> Maybe String
-extractMinColumnName input =
-  case dropWhile (/= '(') input of
-    ('(' : rest) -> case break (== ')') rest of
-      (colName, ')' : _) -> Just colName
-      _ -> Nothing
-    _ -> Nothing
+extractMinColumnName input = listToMaybe [cleanWord word | word <- words input, isMinColumn word]
+
+isMinColumn :: String -> Bool
+isMinColumn word = "min(" `isPrefixOf` word
+
+extractAvgColumnName :: String -> Maybe String
+extractAvgColumnName input = listToMaybe [cleanWord word | word <- words input, isAvgColumn word]
+
+isAvgColumn :: String -> Bool
+isAvgColumn word = "avg(" `isPrefixOf` word
+
+cleanWord :: String -> String
+cleanWord word = reverse $ drop 1 $ reverse $ drop 4 word
