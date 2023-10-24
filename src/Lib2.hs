@@ -9,6 +9,7 @@ module Lib2
 where
 
 import Data.Char (isSpace, toUpper)
+import Data.List
 import Data.List (isInfixOf, isPrefixOf, stripPrefix, tails)
 import Data.Maybe
 import DataFrame (Column (..), ColumnType (StringType), DataFrame (DataFrame), Value (StringValue))
@@ -25,9 +26,8 @@ data ParsedStatement
   | ShowTables
   | ShowTable TableName -- New constructor to specify the table name
   --            {- Columns -}  {- Table Name -}  {- MIN Exists -}  {- MIN Column -}  {- AVG Exists -}  {- AVG Column -} {- WhereAND Exists-} {- Where AND stmts -} {- Where Bool is Something exists -} {- Where Bool is Something Column -}
-  | Select [String] String Bool String Bool String Bool (ParsedStatement, ParsedStatement) Bool String
   | ColumnList [String] String
-  | Min [String] String Bool String Bool String Bool String String Bool
+  | Select [String] String Bool String Bool String Bool String String Bool String
   deriving (Show, Eq)
 
 -- \| BoolMin
@@ -66,7 +66,10 @@ parseStatement stmt
           let condition2 = case extractSecondCondition stmt of
                 Just con2 -> con2
                 Nothing -> ""
-          Right $ Min (map removeMinOrAvgPrefix beforeFrom) (head tableNameWords) containsMinKeyword minColName containsAvgKeyword avgColName containsWhereAndKeyword condition1 condition2 containsWhereBoolKeyword
+          let whereBoolCondition = case extractWhereBoolCondition stmt of
+                Just col -> col
+                Nothing -> ""
+          Right $ Select (map removeMinOrAvgPrefix beforeFrom) (head tableNameWords) containsMinKeyword minColName containsAvgKeyword avgColName containsWhereAndKeyword condition1 condition2 containsWhereBoolKeyword whereBoolCondition
         _ -> Left "Invalid statement: 'FROM' keyword not found."
 
 -- Helper function to check if the statement is "SHOW TABLE <table-name>"
@@ -81,8 +84,7 @@ extractTableName stmt = drop 11 stmt
 executeStatement :: ParsedStatement -> Either ErrorMessage [String]
 executeStatement ShowTables = Right $ listTables InMemoryTables.database
 executeStatement (ShowTable tableName) = Right $ listColumns tableName InMemoryTables.database
-executeStatement (Min columns tableName boolMin minColName boolAvg avgColName boolWhereAnd con1 con2 boolWhereBool) = Right $ printList columns ++ printBool boolMin ++ printTableName tableName ++ [minColName] ++ printBool boolAvg ++ [avgColName] ++ printBool boolWhereAnd ++ [con1] ++ [con2] ++ printBool boolWhereBool
--- executeStatement (ColumnList columns tableName) = Right $ printList columns
+executeStatement (Select columns tableName boolMin minColName boolAvg avgColName boolWhereAnd con1 con2 boolWhereBool whereBool) = Right $ printList columns ++ printBool boolMin ++ printTableName tableName ++ [minColName] ++ printBool boolAvg ++ [avgColName] ++ printBool boolWhereAnd ++ [con1] ++ [con2] ++ printBool boolWhereBool ++ [whereBool]
 executeStatement _ = Left "Not implemented: executeStatement"
 
 -- helper function for debugging
@@ -173,3 +175,9 @@ extractSecondCondition input =
   case dropWhile (/= "AND") (words input) of
     ("AND" : rest) -> Just (unwords rest)
     _ -> Nothing
+
+extractWhereBoolCondition :: String -> Maybe String
+extractWhereBoolCondition input =
+  case findIndex (isPrefixOf "WHERE") (words input) of
+    Just index -> Just $ unwords (drop (index + 1) (words input))
+    Nothing -> Nothing
