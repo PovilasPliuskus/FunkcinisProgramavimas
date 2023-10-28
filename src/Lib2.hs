@@ -89,7 +89,24 @@ executeStatement (ShowTable tableName) = Right $ listColumns tableName InMemoryT
 executeStatement (Select columns tableName boolMin minColName boolAvg avgColName boolWhereAnd con1 con2 boolWhereBool whereBool) = do
   let table = findTableByName InMemoryTables.database tableName
   let columnsToRender = if "*" `elem` columns then calculateAllColumns table else columns
-  Right $ renderDataFrameAsTable 100 (selectColumns table columnsToRender)
+  if boolMin
+    then do
+      if length columnsToRender /= 1
+        then Left "Only one column can be selected when using function MIN"
+        else do
+          let minResult = extractMinValueFromColumn tableName minColName
+          let minTable = DataFrame [Column ("min(" ++ minColName ++ ")") (StringType)] [[minResult]]
+          Right $ renderDataFrameAsTable 100 minTable
+    else
+      if boolAvg
+        then do
+          if length columnsToRender /= 1
+            then Left "Only one column can be selected when using function AVG"
+            else do
+              let avgValue = calculateAverage tableName avgColName
+              let avgTable = DataFrame [Column ("avg(" ++ avgColName ++ ")") (StringType)] [[StringValue (show avgValue)]]
+              Right $ renderDataFrameAsTable 100 avgTable
+        else Right $ renderDataFrameAsTable 100 (selectColumns table columnsToRender)
 executeStatement _ = Left "Not implemented: executeStatement"
 
 calculateAllColumns :: DataFrame -> [String]
@@ -105,12 +122,10 @@ selectColumns (DataFrame columns rows) selectedColumns =
    in DataFrame selectedColumns' selectedRows
 
 mapColumnIndex :: [Column] -> [(String, Int)]
-mapColumnIndex columns = zip (map (\(Column name _) -> name) columns) [0..]
+mapColumnIndex columns = zip (map (\(Column name _) -> name) columns) [0 ..]
 
 selectRow :: [Int] -> Row -> Row
 selectRow selectedIndices row = map (\i -> row !! i) selectedIndices
-
-
 
 -- helper function for debugging
 printList :: [String] -> [String]
