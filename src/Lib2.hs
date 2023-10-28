@@ -8,11 +8,12 @@ module Lib2
   )
 where
 
-import Data.Char (isSpace, toUpper)
+import Data.Char (isSpace, toLower, toUpper)
 import Data.List
 import Data.List (isInfixOf, isPrefixOf, stripPrefix, tails)
 import Data.Maybe
-import DataFrame (Column (..), ColumnType (StringType), DataFrame (DataFrame), Value (StringValue))
+import Data.Ord (comparing)
+import DataFrame (Column (..), ColumnType (StringType), DataFrame (DataFrame), Row (..), Value (..))
 import GHC.RTS.Flags (DebugFlags (stm))
 import InMemoryTables (TableName, database)
 
@@ -181,3 +182,47 @@ extractWhereBoolCondition input =
   case findIndex (isPrefixOf "WHERE") (words input) of
     Just index -> Just $ unwords (drop (index + 1) (words input))
     Nothing -> Nothing
+
+extractMinValueFromColumn :: TableName -> String -> Value
+extractMinValueFromColumn tableName columnName =
+  let dataFrame = findTableByName InMemoryTables.database tableName
+   in case getColumnIndex dataFrame columnName of
+        Just columnIndex ->
+          let values = getColumnValues dataFrame columnIndex
+           in case filterValues values of
+                [] -> NullValue
+                nonNullValues ->
+                  let minVal = minimumBy (comparing getValueForComparison) nonNullValues
+                   in case minVal of
+                        StringValue minStr -> StringValue minStr
+                        IntegerValue minInt -> IntegerValue minInt
+                        BoolValue minBool -> BoolValue minBool
+                        _ -> NullValue
+        Nothing -> NullValue
+
+getValueForComparison :: Value -> (String, Integer, Bool)
+getValueForComparison (StringValue str) = (str, 0, False)
+getValueForComparison (IntegerValue int) = ("", int, False)
+getValueForComparison (BoolValue bool) = ("", 0, bool)
+getValueForComparison _ = ("", 0, False)
+
+valueToString :: Value -> String
+valueToString (StringValue str) = str
+valueToString _ = ""
+
+findTableByName :: Database -> String -> DataFrame
+findTableByName ((tableName, dataFrame) : database) givenName
+  | map toLower tableName == map toLower givenName = dataFrame
+  | otherwise = findTableByName database givenName
+
+getColumnIndex :: DataFrame -> String -> Maybe Int
+getColumnIndex (DataFrame columns _) columnName =
+  elemIndex columnName (map (\(Column name _) -> name) columns)
+
+getColumnValues :: DataFrame -> Int -> [Value]
+getColumnValues (DataFrame _ rows) columnIndex =
+  map (!! columnIndex) rows
+
+filterValues :: [Value] -> [Value]
+filterValues values =
+  filter (\v -> v /= NullValue) values
