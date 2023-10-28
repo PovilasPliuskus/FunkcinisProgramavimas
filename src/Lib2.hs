@@ -85,7 +85,9 @@ extractTableName stmt = drop 11 stmt
 executeStatement :: ParsedStatement -> Either ErrorMessage [String]
 executeStatement ShowTables = Right $ listTables InMemoryTables.database
 executeStatement (ShowTable tableName) = Right $ listColumns tableName InMemoryTables.database
-executeStatement (Select columns tableName boolMin minColName boolAvg avgColName boolWhereAnd con1 con2 boolWhereBool whereBool) = Right $ printList columns ++ printBool boolMin ++ printTableName tableName ++ [minColName] ++ printBool boolAvg ++ [avgColName] ++ printBool boolWhereAnd ++ [con1] ++ [con2] ++ printBool boolWhereBool ++ [whereBool]
+-- executeStatement (Select columns tableName boolMin minColName boolAvg avgColName boolWhereAnd con1 con2 boolWhereBool whereBool) = Right $ printList columns ++ printBool boolMin ++ printTableName tableName ++ [minColName] ++ printBool boolAvg ++ [avgColName] ++ printBool boolWhereAnd ++ [con1] ++ [con2] ++ printBool boolWhereBool ++ [whereBool]
+executeStatement (Select columns tableName boolMin minColName boolAvg avgColName boolWhereAnd con1 con2 boolWhereBool whereBool) =
+  Right $ renderDataFrameAsTable 100 (findTableByName InMemoryTables.database tableName)
 executeStatement _ = Left "Not implemented: executeStatement"
 
 -- helper function for debugging
@@ -206,10 +208,6 @@ getValueForComparison (IntegerValue int) = ("", int, False)
 getValueForComparison (BoolValue bool) = ("", 0, bool)
 getValueForComparison _ = ("", 0, False)
 
-valueToString :: Value -> String
-valueToString (StringValue str) = str
-valueToString _ = ""
-
 findTableByName :: Database -> String -> DataFrame
 findTableByName ((tableName, dataFrame) : database) givenName
   | map toLower tableName == map toLower givenName = dataFrame
@@ -248,3 +246,49 @@ toDouble = fromIntegral
 
 sumNumericValues :: [Double] -> Double
 sumNumericValues = foldl' (+) 0.0
+
+renderDataFrameAsTable :: Integer -> DataFrame -> [String]
+renderDataFrameAsTable terminalWidth (DataFrame columns values) =
+  let numColumns = calculateNumberOfColumns columns
+      cappedWidth = min 100 terminalWidth
+      columnWidth = calculateOneColumnWidth cappedWidth numColumns
+      headerRow = generateHeaderRow columns columnWidth
+      dataRows = map (generateDataRow columns columnWidth) values
+   in headerRow : dataRows
+
+calculateNumberOfColumns :: [Column] -> Integer
+calculateNumberOfColumns columns =
+  let numColumns = length columns
+   in fromIntegral numColumns
+
+calculateOneColumnWidth :: Integer -> Integer -> Integer
+calculateOneColumnWidth terminalWidth numColumns =
+  terminalWidth `div` numColumns
+
+generateHeaderRow :: [Column] -> Integer -> String
+generateHeaderRow columns columnWidth =
+  let columnNames = map (\(Column name _) -> name) columns
+      formattedColumnNames = intercalate " | " (map (`formatColumn` columnWidth) columnNames)
+      separatorLine = intercalate "-+-" (replicate (length columnNames) (replicate (fromIntegral columnWidth) '-'))
+   in formattedColumnNames ++ "\n" ++ separatorLine
+
+formatColumn :: String -> Integer -> String
+formatColumn columnName width =
+  let padding = max 0 (width - fromIntegral (length columnName))
+   in columnName ++ replicate (fromIntegral padding) ' '
+
+generateDataRow :: [Column] -> Integer -> Row -> String
+generateDataRow columns columnWidth row =
+  let formattedValues = map (`formatColumn` columnWidth) (map valueToString row)
+   in intercalate " | " formattedValues
+
+valueToString :: Value -> String
+valueToString (IntegerValue x) = show x
+valueToString (StringValue x) = x
+valueToString (BoolValue x) = show x
+valueToString NullValue = "NULL"
+
+printResult :: Either ErrorMessage [String] -> IO ()
+printResult result = case result of
+  Right strings -> mapM_ putStrLn strings
+  Left errorMessage -> putStrLn errorMessage
