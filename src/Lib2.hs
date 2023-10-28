@@ -106,7 +106,12 @@ executeStatement (Select columns tableName boolMin minColName boolAvg avgColName
               let avgValue = calculateAverage tableName avgColName
               let avgTable = DataFrame [Column ("avg(" ++ avgColName ++ ")") (StringType)] [[StringValue (show avgValue)]]
               Right $ renderDataFrameAsTable 100 avgTable
-        else Right $ renderDataFrameAsTable 100 (selectColumns table columnsToRender)
+        else
+          if boolWhereBool
+            then do
+              let filteredTable = buildWhereBoolDataFrame whereBool table
+              Right $ renderDataFrameAsTable 100 filteredTable
+            else Right $ renderDataFrameAsTable 100 (selectColumns table columnsToRender)
 executeStatement _ = Left "Not implemented: executeStatement"
 
 calculateAllColumns :: DataFrame -> [String]
@@ -324,6 +329,51 @@ valueToString (IntegerValue x) = show x
 valueToString (StringValue x) = x
 valueToString (BoolValue x) = show x
 valueToString NullValue = "NULL"
+
+buildWhereBoolDataFrame :: String -> DataFrame -> DataFrame
+buildWhereBoolDataFrame condition (DataFrame columns rows) =
+  let (colName, expectedValue) = parseWhereBoolCondition condition
+      indexMap = mapColumnIndex columns
+      colIndex = fromMaybe (-1) (lookup colName indexMap)
+      filteredRows = filterRowsWithBoolCondition colIndex expectedValue rows
+   in DataFrame columns filteredRows
+
+checkCondition :: (EqValue a) => Row -> Int -> Value -> a -> Bool
+checkCondition row colIndex value expectedValue =
+  case row `at` colIndex of
+    BoolValue b -> checkEqual (BoolValue b) expectedValue
+    _ -> False
+
+class (Eq a) => EqValue a where
+  checkEqual :: Value -> a -> Bool
+
+instance EqValue Bool where
+  checkEqual :: Value -> Bool -> Bool
+  checkEqual (BoolValue value) expectedValue = value == expectedValue
+  checkEqual _ _ = False
+
+at :: [a] -> Int -> a
+at xs i
+  | i >= 0 && i < length xs = xs !! i
+  | otherwise = error "Index out of bounds"
+
+parseWhereBoolCondition :: String -> (String, Bool)
+parseWhereBoolCondition condition =
+  case words condition of
+    [columnName, "=", "TRUE"] -> (columnName, True)
+    [columnName, "=", "FALSE"] -> (columnName, False)
+    _ -> error "Invalid condition format"
+
+filterRowsWithBoolCondition :: (EqValue a) => Int -> a -> [Row] -> [Row]
+filterRowsWithBoolCondition colIndex expectedValue rows =
+  filter (\row -> checkCondition row colIndex (row `at` colIndex) expectedValue) rows
+
+selectColumnsByIndex :: DataFrame -> [Int] -> [Column]
+selectColumnsByIndex (DataFrame columns _) indices =
+  [columns !! i | i <- indices]
+
+getDataRows :: DataFrame -> [Row]
+getDataRows (DataFrame _ rows) = rows
 
 printResult :: Either ErrorMessage [String] -> IO ()
 printResult result = case result of
