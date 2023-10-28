@@ -86,9 +86,31 @@ executeStatement :: ParsedStatement -> Either ErrorMessage [String]
 executeStatement ShowTables = Right $ listTables InMemoryTables.database
 executeStatement (ShowTable tableName) = Right $ listColumns tableName InMemoryTables.database
 -- executeStatement (Select columns tableName boolMin minColName boolAvg avgColName boolWhereAnd con1 con2 boolWhereBool whereBool) = Right $ printList columns ++ printBool boolMin ++ printTableName tableName ++ [minColName] ++ printBool boolAvg ++ [avgColName] ++ printBool boolWhereAnd ++ [con1] ++ [con2] ++ printBool boolWhereBool ++ [whereBool]
-executeStatement (Select columns tableName boolMin minColName boolAvg avgColName boolWhereAnd con1 con2 boolWhereBool whereBool) =
-  Right $ renderDataFrameAsTable 100 (findTableByName InMemoryTables.database tableName)
+executeStatement (Select columns tableName boolMin minColName boolAvg avgColName boolWhereAnd con1 con2 boolWhereBool whereBool) = do
+  let table = findTableByName InMemoryTables.database tableName
+  let columnsToRender = if "*" `elem` columns then calculateAllColumns table else columns
+  Right $ renderDataFrameAsTable 100 (selectColumns table columnsToRender)
 executeStatement _ = Left "Not implemented: executeStatement"
+
+calculateAllColumns :: DataFrame -> [String]
+calculateAllColumns (DataFrame columns _) =
+  map (\(Column name _) -> name) columns
+
+selectColumns :: DataFrame -> [String] -> DataFrame
+selectColumns (DataFrame columns rows) selectedColumns =
+  let columnIndexMap = mapColumnIndex columns
+      selectedColumnIndices = mapMaybe (`lookup` columnIndexMap) selectedColumns
+      selectedColumns' = map (\i -> columns !! i) selectedColumnIndices
+      selectedRows = map (selectRow selectedColumnIndices) rows
+   in DataFrame selectedColumns' selectedRows
+
+mapColumnIndex :: [Column] -> [(String, Int)]
+mapColumnIndex columns = zip (map (\(Column name _) -> name) columns) [0..]
+
+selectRow :: [Int] -> Row -> Row
+selectRow selectedIndices row = map (\i -> row !! i) selectedIndices
+
+
 
 -- helper function for debugging
 printList :: [String] -> [String]
