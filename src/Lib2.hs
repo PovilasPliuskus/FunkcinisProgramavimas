@@ -226,3 +226,25 @@ getColumnValues (DataFrame _ rows) columnIndex =
 filterValues :: [Value] -> [Value]
 filterValues values =
   filter (\v -> v /= NullValue) values
+
+calculateAverage :: TableName -> String -> Double
+calculateAverage tableName columnName =
+  let dataFrame = findTableByName InMemoryTables.database tableName
+   in case getColumnIndex dataFrame columnName of
+        Just columnIndex ->
+          let values = getColumnValues dataFrame columnIndex
+              numericValues = filterNumericValues values
+           in case numericValues of
+                [] -> 0.0 -- Return 0.0 if no numeric values are found
+                _ -> sumNumericValues numericValues / fromIntegral (length numericValues)
+        Nothing -> 0.0 -- Return 0.0 if the column doesn't exist
+
+filterNumericValues :: [Value] -> [Double]
+filterNumericValues values =
+  [toDouble val | IntegerValue val <- values]
+
+toDouble :: Integer -> Double
+toDouble = fromIntegral
+
+sumNumericValues :: [Double] -> Double
+sumNumericValues = foldl' (+) 0.0
