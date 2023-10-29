@@ -348,7 +348,7 @@ class (Eq a) => EqValue a where
   checkEqual :: Value -> a -> Bool
 
 instance EqValue Bool where
-  checkEqual :: Value -> Bool -> Bool
+  -- checkEqual :: Value -> Bool -> Bool
   checkEqual (BoolValue value) expectedValue = value == expectedValue
   checkEqual _ _ = False
 
