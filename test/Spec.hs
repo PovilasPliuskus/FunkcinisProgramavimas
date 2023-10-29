@@ -2,6 +2,7 @@ import Data.Either
 import Data.Maybe ()
 import InMemoryTables qualified as D
 import Lib1
+import Lib2
 import Test.Hspec
 
 main :: IO ()
@@ -34,3 +35,6 @@ main = hspec $ do
   describe "Lib1.renderDataFrameAsTable" $ do
     it "renders a table" $ do
       Lib1.renderDataFrameAsTable 100 (snd D.tableEmployees) `shouldSatisfy` not . null
+  describe "Lib2.parseStatement" $ do
+    it "parses a show table statement" $ do
+      Lib2.parseStatement "SHOW TABLES" `shouldSatisfy` isRight
