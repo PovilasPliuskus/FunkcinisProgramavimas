@@ -43,14 +43,14 @@ data ParsedStatement
 -- Parses user input into an entity representing a parsed
 -- statement
 parseStatement :: String -> Either ErrorMessage ParsedStatement
-parseStatement "SHOW TABLES" = Right ShowTables
 parseStatement stmt
+  | isShowTablesStatement stmt = Right $ ShowTables
   | isShowTableStatement stmt = Right $ ShowTable (extractTableName stmt)
   | otherwise = do
       rest <- startsWithSelect stmt
-      let (beforeFrom, afterFrom) = span (/= "FROM") (words rest)
+      let (beforeFrom, afterFrom) = span (/= "from") (words (map toLower rest))
       case afterFrom of
-        "FROM" : tableNameWords -> do
+        "from" : tableNameWords -> do
           let containsMinKeyword = containsMin stmt
           let containsAvgKeyword = containsAvg stmt
           let containsWhereAndKeyword = containsWhereAnd stmt
@@ -75,7 +75,10 @@ parseStatement stmt
 
 -- Helper function to check if the statement is "SHOW TABLE <table-name>"
 isShowTableStatement :: String -> Bool
-isShowTableStatement stmt = take 11 stmt == "SHOW TABLE "
+isShowTableStatement stmt = take 11 (map toLower stmt) == "show table "
+
+isShowTablesStatement :: String -> Bool
+isShowTablesStatement stmt = map toLower stmt == "show tables"
 
 -- Helper function to extract the table name from "SHOW TABLE <table-name>"
 extractTableName :: String -> TableName
