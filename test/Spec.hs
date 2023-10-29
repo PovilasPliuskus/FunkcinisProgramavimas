@@ -1,6 +1,6 @@
 import Data.Either
 import Data.Maybe ()
-import InMemoryTables qualified as D
+import DataFrame (Column (..), ColumnType (..), Value (..), DataFrame (..))import InMemoryTables qualified as D
 import Lib1
 import Lib2
 import Test.Hspec
@@ -36,5 +36,109 @@ main = hspec $ do
     it "renders a table" $ do
       Lib1.renderDataFrameAsTable 100 (snd D.tableEmployees) `shouldSatisfy` not . null
   describe "Lib2.parseStatement" $ do
-    it "parses a show table statement" $ do
+    it "parses show tables statement" $ do
       Lib2.parseStatement "SHOW TABLES" `shouldSatisfy` isRight
+    it "parses show tables statement (case insensitivity involved)" $ do
+      Lib2.parseStatement "ShoW TabLEs" `shouldNotSatisfy` isRight
+    it "parses show table statement" $ do
+      Lib2.parseStatement "SHOW TABLE flags" `shouldSatisfy` isRight
+    it "parses show table statement (case insensitivity involved)" $ do
+      Lib2.parseStatement "SHoW TaBLe flags" `shouldSatisfy` isRight
+    it "parses a simple select statement with an asterisk" $ do
+      Lib2.parseStatement "SELECT * FROM employees" `shouldSatisfy` isRight
+    it "parses a simple select statement with distinct columns" $ do
+      Lib2.parseStatement "SELECT name id FROM employees" `shouldSatisfy` isRight
+    it "parses MIN function" $ do
+      Lib2.parseStatement "SELECT MIN(id) FROM employees" `shouldSatisfy` isRight
+    it "parses AVG function" $ do
+      Lib2.parseStatement "SELECT AVG(name) FROM employees" `shouldSatisfy` isRight
+    it "parses WHERE AND function" $ do
+      Lib2.parseStatement "SELECT id name FROM employees WHERE name = 'Ed' AND id = '2'" `shouldSatisfy` isRight
+    it "parses WHERE BOOL function" $ do
+      Lib2.parseStatement "SELECT flag value FROM flags WHERE value = TRUE" `shouldSatisfy` isRight
+  describe "Lib2.executeStatement" $ do
+    it "executes SHOW TABLES statement" $ do
+      case Lib2.parseStatement "SHOW TABLES" of
+        Left err -> err `shouldBe` "should have successfully parsed"
+        Right ps -> Lib2.executeStatement ps `shouldBe` Right showTablesTest
+    it "executes SHOW TABLE employees statement" $ do
+      case Lib2.parseStatement "SHOW TABLE employees" of
+        Left err -> err `shouldBe` "should have successfully parsed"
+        Right ps -> Lib2.executeStatement ps `shouldBe` Right showTableEmployeesTest
+    it "executes a simple select statement with distinct columns" $ do
+      case Lib2.parseStatement "SELECT name surname FROM employees" of
+        Left err -> err `shouldBe` "should have successfully parsed"
+        Right ps -> Lib2.executeStatement ps "SELECT name surname FROM employees" `shouldBe` Right distinctSelectTableTest
+    it "executes MIN function" $ do
+      case Lib2.parseStatement "SELECT MIN(id) FROM employees" of
+        Left err -> err `shouldBe` "should have successfully parsed"
+        Right ps -> Lib2.executeStatement ps `shouldBe` Right minTableTest
+    it "executes AVG function" $ do
+      case Lib2.parseStatement "SELECT AVG(id) FROM employees" of
+        Left err -> err `shouldBe` "should have successfully parsed"
+        Right ps -> Lib2.executeStatement ps "SELECT AVG(id) FROM employees" `shouldBe` Right avgTableTest
+    it "executes WHERE BOOL function" $ do
+      case Lib2.parseStatement "SELECT flag value FROM flags WHERE value = TRUE" of
+        Left err -> err `shouldBe` "should have successfully parsed"
+        Right ps -> Lib2.executeStatement ps "SELECT flag value FROM flags WHERE value = TRUE" `shouldBe` Right whereBoolTableTest
+    it "executes WHERE AND function" $ do
+      case Lib2.parseStatement "SELECT id name surname FROM employees WHERE name = 'Ed' AND surname = 'Dl'" of
+        Left err -> err `shouldBe` "should have successfully parsed"
+        Right ps -> Lib2.executeStatement ps "SELECT id name surname FROM employees WHERE name = 'Ed' AND surname = 'Dl'" `shouldBe` Right whereAndTableTest
+
+showTablesTest :: DataFrame
+showTablesTest =
+  DataFrame
+    [Column "Tables" StringType]
+    [ [StringValue "employees"],
+      [StringValue "invalid1"],
+      [StringValue "invalid2"],
+      [StringValue "long_strings"],
+      [StringValue "flags"]
+    ]
+
+showTableEmployeesTest :: DataFrame
+showTablesTest = DataFrame
+[Column "Tables" StringType]
+[
+  [StringValue "id"],
+  [StringValue "name"],
+  [StringValue "surname"]
+]
+
+distinctSelectTableTest :: DataFrame
+distinctSelectTableTest = DataFrame
+[Column "name" StringType, Column "surname" StringType]
+[
+  [StringValue "Vi", StringValue "Po"],
+  [StringValue "Ed", StringValue "Dl"]
+]
+
+minTableTest :: DataFrame
+minTableTest = DataFrame
+[Column "min(id)" IntegerType]
+[
+  [IntegerValue 1]
+]
+
+avgTableTest :: DataFrame
+avgTableTest = DataFrame
+[Column "avg(id)" IntegerType]
+[
+  [IntegerValue 1.5]
+]
+
+whereBoolTableTest :: DataFrame
+whereBoolTableTest = DataFrame
+[Column "flag" StringType, Column "value" BoolType]
+[
+  [StringValue "a", BoolValue True],
+  [StringValue "b", BoolValue True]
+]
+
+whereAndTableTest :: DataFrame
+whereAndTableTest = DataFrame
+[Column "id" IntegerType, Column "name" StringType, Column "surname" StringType]
+[
+  [IntegerValue 1, StringValue "Ed", StringValue "Dl"]
+]
