@@ -84,7 +84,7 @@ main = hspec $ do
     it "executes WHERE AND function" $ do
       case Lib2.parseStatement "SELECT id name surname FROM employees WHERE name = 'Ed' AND surname = 'Dl'" of
         Left err -> err `shouldBe` "should have successfully parsed"
-        Right ps -> Lib2.executeStatement ps "SELECT id name surname FROM employees WHERE name = 'Ed' AND surname = 'Dl'" `shouldBe` Right whereAndTableTest
+        Right ps -> Lib2.executeStatement ps "SELECT id name surname FROM employees WHERE name = Ed AND surname = Dl" `shouldBe` Right whereAndTableTest
 
 showTablesTest :: DataFrame
 showTablesTest =

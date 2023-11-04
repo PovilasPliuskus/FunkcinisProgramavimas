@@ -114,8 +114,46 @@ executeStatement (Select columns tableName boolMin minColName boolAvg avgColName
             then do
               let filteredTable = buildWhereBoolDataFrame whereBool table
               Right $ renderDataFrameAsTable 100 filteredTable
-            else Right $ renderDataFrameAsTable 100 (selectColumns table columnsToRender)
+            else
+              if boolWhereAnd
+                then do
+                  let (column1, value1) = extractConditionParts con1
+                  let (column2, value2) = extractConditionParts con2
+                  let filteredTable = filterTableWithWhereAnd column1 value1 column2 value2 table
+                  Right $ renderDataFrameAsTable 100 filteredTable
+                else do
+                  Right $ renderDataFrameAsTable 100 (selectColumns table columnsToRender)
 executeStatement _ = Left "Not implemented: executeStatement"
+
+-- Helper function to extract column name and value from condition
+extractConditionParts :: String -> (String, String)
+extractConditionParts condition =
+  case words condition of
+    [columnName, "=", value] -> (columnName, value)
+    _ -> ("", "") -- Handle the case where the condition doesn't match the expected format
+
+-- Helper function to filter table using WHERE AND condition
+filterTableWithWhereAnd :: String -> String -> String -> String -> DataFrame -> DataFrame
+filterTableWithWhereAnd column1 value1 column2 value2 table =
+  let columnIndex1 = getColumnIndex table column1
+      columnIndex2 = getColumnIndex table column2
+      filteredRows = filter (\row -> checkCondition row columnIndex1 value1 && checkCondition row columnIndex2 value2) (dataRows table)
+   in DataFrame (columns table) filteredRows
+  where
+    checkCondition :: Row -> Maybe Int -> String -> Bool
+    checkCondition row (Just columnIndex) value =
+      case row !! columnIndex of
+        StringValue str -> str == value
+        IntegerValue int -> show int == value
+        BoolValue bool -> show bool == value
+        _ -> False
+    checkCondition _ _ _ = False
+
+columns :: DataFrame -> [Column]
+columns (DataFrame cols _) = cols
+
+dataRows :: DataFrame -> [[Value]]
+dataRows (DataFrame _ rows) = rows
 
 calculateAllColumns :: DataFrame -> [String]
 calculateAllColumns (DataFrame columns _) =
