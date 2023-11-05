@@ -16,6 +16,7 @@ import Data.Ord (comparing)
 import DataFrame (Column (..), ColumnType (StringType), DataFrame (DataFrame), Row (..), Value (..))
 import GHC.RTS.Flags (DebugFlags (stm))
 import InMemoryTables (TableName, database)
+import Lib1 (renderDataFrameAsTable)
 
 type ErrorMessage = String
 
@@ -85,10 +86,16 @@ extractTableName :: String -> TableName
 extractTableName stmt = drop 11 stmt
 
 -- Executes a parsed statement. Produces a list of table names or columns.
-executeStatement :: ParsedStatement -> Either ErrorMessage [String]
-executeStatement ShowTables = Right $ listTables InMemoryTables.database
-executeStatement (ShowTable tableName) = Right $ listColumns tableName InMemoryTables.database
--- executeStatement (Select columns tableName boolMin minColName boolAvg avgColName boolWhereAnd con1 con2 boolWhereBool whereBool) = Right $ printList columns ++ printBool boolMin ++ printTableName tableName ++ [minColName] ++ printBool boolAvg ++ [avgColName] ++ printBool boolWhereAnd ++ [con1] ++ [con2] ++ printBool boolWhereBool ++ [whereBool]
+executeStatement :: ParsedStatement -> Either ErrorMessage DataFrame
+executeStatement ShowTables = do
+  let tableNames = listTables InMemoryTables.database
+  let columns = [Column "Table Name" StringType]
+  let rows = map (\name -> [StringValue name]) tableNames
+  Right $ DataFrame columns rows
+-- executeStatement (ShowTable tableName) =
+--   case findTableByName InMemoryTables.database tableName of
+--     Just table -> Right table
+--     Nothing -> Left $ "Table not found: " ++ tableName
 executeStatement (Select columns tableName boolMin minColName boolAvg avgColName boolWhereAnd con1 con2 boolWhereBool whereBool) = do
   let table = findTableByName InMemoryTables.database tableName
   let columnsToRender = if "*" `elem` columns then calculateAllColumns table else columns
@@ -98,8 +105,8 @@ executeStatement (Select columns tableName boolMin minColName boolAvg avgColName
         then Left "Only one column can be selected when using function MIN"
         else do
           let minResult = extractMinValueFromColumn tableName minColName
-          let minTable = DataFrame [Column ("min(" ++ minColName ++ ")") (StringType)] [[minResult]]
-          Right $ renderDataFrameAsTable 100 minTable
+          let minTable = DataFrame [Column ("min(" ++ minColName ++ ")") StringType] [[minResult]]
+          Right minTable
     else
       if boolAvg
         then do
@@ -107,22 +114,21 @@ executeStatement (Select columns tableName boolMin minColName boolAvg avgColName
             then Left "Only one column can be selected when using function AVG"
             else do
               let avgValue = calculateAverage tableName avgColName
-              let avgTable = DataFrame [Column ("avg(" ++ avgColName ++ ")") (StringType)] [[StringValue (show avgValue)]]
-              Right $ renderDataFrameAsTable 100 avgTable
+              let avgTable = DataFrame [Column ("avg(" ++ avgColName ++ ")") StringType] [[StringValue (show avgValue)]]
+              Right avgTable
         else
           if boolWhereBool
             then do
               let filteredTable = buildWhereBoolDataFrame whereBool table
-              Right $ renderDataFrameAsTable 100 filteredTable
+              Right filteredTable
             else
               if boolWhereAnd
                 then do
                   let (column1, value1) = extractConditionParts con1
                   let (column2, value2) = extractConditionParts con2
                   let filteredTable = filterTableWithWhereAnd column1 value1 column2 value2 table
-                  Right $ renderDataFrameAsTable 100 filteredTable
-                else do
-                  Right $ renderDataFrameAsTable 100 (selectColumns table columnsToRender)
+                  Right filteredTable
+                else Right $ selectColumns table columnsToRender
 executeStatement _ = Left "Not implemented: executeStatement"
 
 -- Helper function to extract column name and value from condition
@@ -192,10 +198,10 @@ listColumns tableName db =
     Just (DataFrame columns _) -> map (\(Column colName _) -> colName) columns
     Nothing -> []
 
-parseAndExecute :: String -> Either ErrorMessage [String]
-parseAndExecute statement = do
-  parsed <- parseStatement statement
-  executeStatement parsed
+-- parseAndExecute :: String -> Either ErrorMessage [String]
+-- parseAndExecute statement = do
+--   parsed <- parseStatement statement
+--   executeStatement parsed
 
 listTables :: Database -> [TableName]
 listTables db = map (\(name, _) -> name) db
@@ -330,14 +336,14 @@ toDouble = fromIntegral
 sumNumericValues :: [Double] -> Double
 sumNumericValues = foldl' (+) 0.0
 
-renderDataFrameAsTable :: Integer -> DataFrame -> [String]
-renderDataFrameAsTable terminalWidth (DataFrame columns values) =
-  let numColumns = calculateNumberOfColumns columns
-      cappedWidth = min 100 terminalWidth
-      columnWidth = calculateOneColumnWidth cappedWidth numColumns
-      headerRow = generateHeaderRow columns columnWidth
-      dataRows = map (generateDataRow columns columnWidth) values
-   in headerRow : dataRows
+-- renderDataFrameAsTable :: Integer -> DataFrame -> String
+-- renderDataFrameAsTable terminalWidth (DataFrame columns values) =
+--   let numColumns = calculateNumberOfColumns columns
+--       cappedWidth = min 100 terminalWidth
+--       columnWidth = calculateOneColumnWidth cappedWidth numColumns
+--       headerRow = generateHeaderRow columns columnWidth
+--       dataRows = map (generateDataRow columns columnWidth) values
+--    in unlines (headerRow : dataRows)
 
 calculateNumberOfColumns :: [Column] -> Integer
 calculateNumberOfColumns columns =
