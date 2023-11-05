@@ -118,8 +118,8 @@ distinctSelectTableTest =
 minTableTest :: DataFrame
 minTableTest =
   DataFrame
-    [Column "min(id)" IntegerType]
-    [ [IntegerValue 1]
+    [Column "min(id)" StringType]
+    [ [StringValue "1"]
     ]
 
 -- avgTableTest :: DataFrame

@@ -105,7 +105,7 @@ executeStatement (Select columns tableName boolMin minColName boolAvg avgColName
         then Left "Only one column can be selected when using function MIN"
         else do
           let minResult = extractMinValueFromColumn tableName minColName
-          let minTable = DataFrame [Column ("min(" ++ minColName ++ ")") StringType] [[minResult]]
+          let minTable = DataFrame [Column ("min(" ++ minColName ++ ")") (StringType)] [[minResult]]
           Right minTable
     else
       if boolAvg
