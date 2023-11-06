@@ -62,6 +62,7 @@ parseStatement stmt
           let avgColName = case extractAvgColumnName stmt of
                 Just colName -> colName
                 Nothing -> ""
+          let columnList = map removeCommas $ map removeMinOrAvgPrefix beforeFrom
           let condition1 = case extractFirstCondition stmt of
                 Just con1 -> con1
                 Nothing -> ""
@@ -71,8 +72,11 @@ parseStatement stmt
           let whereBoolCondition = case extractWhereBoolCondition stmt of
                 Just col -> col
                 Nothing -> ""
-          Right $ Select (map removeMinOrAvgPrefix beforeFrom) (head tableNameWords) containsMinKeyword minColName containsAvgKeyword avgColName containsWhereAndKeyword condition1 condition2 containsWhereBoolKeyword whereBoolCondition
+          Right $ Select columnList (head tableNameWords) containsMinKeyword minColName containsAvgKeyword avgColName containsWhereAndKeyword condition1 condition2 containsWhereBoolKeyword whereBoolCondition
         _ -> Left "Invalid statement: 'FROM' keyword not found."
+
+removeCommas :: String -> String
+removeCommas = filter (/= ',')
 
 -- Helper function to check if the statement is "SHOW TABLE <table-name>"
 isShowTableStatement :: String -> Bool

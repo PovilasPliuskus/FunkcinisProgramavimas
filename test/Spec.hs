@@ -48,15 +48,15 @@ main = hspec $ do
     it "parses a simple select statement with an asterisk" $ do
       Lib2.parseStatement "SELECT * FROM employees" `shouldSatisfy` isRight
     it "parses a simple select statement with distinct columns" $ do
-      Lib2.parseStatement "SELECT name id FROM employees" `shouldSatisfy` isRight
+      Lib2.parseStatement "SELECT name, id FROM employees" `shouldSatisfy` isRight
     it "parses MIN function" $ do
       Lib2.parseStatement "SELECT MIN(id) FROM employees" `shouldSatisfy` isRight
     it "parses AVG function" $ do
       Lib2.parseStatement "SELECT AVG(name) FROM employees" `shouldSatisfy` isRight
     it "parses WHERE AND function" $ do
-      Lib2.parseStatement "SELECT id name FROM employees WHERE name = Ed AND id = 2" `shouldSatisfy` isRight
+      Lib2.parseStatement "SELECT id, name FROM employees WHERE name = Ed AND id = 2" `shouldSatisfy` isRight
     it "parses WHERE BOOL function" $ do
-      Lib2.parseStatement "SELECT flag value FROM flags WHERE value = TRUE" `shouldSatisfy` isRight
+      Lib2.parseStatement "SELECT flag, value FROM flags WHERE value = TRUE" `shouldSatisfy` isRight
   describe "Lib2.executeStatement" $ do
     it "executes SHOW TABLES statement" $ do
       case Lib2.parseStatement "SHOW TABLES" of
@@ -67,7 +67,7 @@ main = hspec $ do
         Left err -> err `shouldBe` "should have successfully parsed"
         Right ps -> Lib2.executeStatement ps `shouldBe` Right showTableEmployeesTest
     it "executes a simple select statement with distinct columns" $ do
-      case Lib2.parseStatement "SELECT name surname FROM employees" of
+      case Lib2.parseStatement "SELECT name, surname FROM employees" of
         Left err -> err `shouldBe` "should have successfully parsed"
         Right ps -> Lib2.executeStatement ps `shouldBe` Right distinctSelectTableTest
     it "executes MIN function" $ do
@@ -79,11 +79,11 @@ main = hspec $ do
         Left err -> err `shouldBe` "should have successfully parsed"
         Right ps -> Lib2.executeStatement ps `shouldBe` Right avgTableTest
     it "executes WHERE BOOL function" $ do
-      case Lib2.parseStatement "SELECT flag value FROM flags WHERE value = TRUE" of
+      case Lib2.parseStatement "SELECT flag, value FROM flags WHERE value = TRUE" of
         Left err -> err `shouldBe` "should have successfully parsed"
         Right ps -> Lib2.executeStatement ps `shouldBe` Right whereBoolTableTest
     it "executes WHERE AND function" $ do
-      case Lib2.parseStatement "SELECT id name surname FROM employees WHERE name = Ed AND surname = Dl" of
+      case Lib2.parseStatement "SELECT id, name, surname FROM employees WHERE name = Ed AND surname = Dl" of
         Left err -> err `shouldBe` "should have successfully parsed"
         Right ps -> Lib2.executeStatement ps `shouldBe` Right whereAndTableTest
 
