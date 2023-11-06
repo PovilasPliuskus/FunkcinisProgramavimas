@@ -74,10 +74,10 @@ main = hspec $ do
       case Lib2.parseStatement "SELECT min(id) FROM employees" of
         Left err -> err `shouldBe` "should have successfully parsed"
         Right ps -> Lib2.executeStatement ps `shouldBe` Right minTableTest
-    -- it "executes AVG function" $ do
-    --   case Lib2.parseStatement "SELECT AVG(id) FROM employees" of
-    --     Left err -> err `shouldBe` "should have successfully parsed"
-    --     Right ps -> Lib2.executeStatement ps `shouldBe` Right avgTableTest
+    it "executes AVG function" $ do
+      case Lib2.parseStatement "SELECT avg(id) FROM employees" of
+        Left err -> err `shouldBe` "should have successfully parsed"
+        Right ps -> Lib2.executeStatement ps `shouldBe` Right avgTableTest
     it "executes WHERE BOOL function" $ do
       case Lib2.parseStatement "SELECT flag value FROM flags WHERE value = TRUE" of
         Left err -> err `shouldBe` "should have successfully parsed"
@@ -122,12 +122,12 @@ minTableTest =
     [ [IntegerValue 1]
     ]
 
--- avgTableTest :: DataFrame
--- avgTableTest =
---   DataFrame
---     [Column "avg(id)" IntegerType]
---     [ [IntegerValue 1.5]
---     ]
+avgTableTest :: DataFrame
+avgTableTest =
+  DataFrame
+    [Column "avg(id)" StringType]
+    [ [StringValue "1.5"]
+    ]
 
 whereBoolTableTest :: DataFrame
 whereBoolTableTest =
