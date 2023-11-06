@@ -92,6 +92,7 @@ executeStatement ShowTables = do
   let columns = [Column "Table Name" StringType]
   let rows = map (\name -> [StringValue name]) tableNames
   Right $ DataFrame columns rows
+executeStatement (ShowTable tableName) = Right $ listColumns tableName InMemoryTables.database
 -- executeStatement (ShowTable tableName) =
 --   case findTableByName InMemoryTables.database tableName of
 --     Just table -> Right table
@@ -196,11 +197,13 @@ printBool True = ["True", "True"]
 printBool False = ["False", "False"]
 
 -- Function to list columns in a table
-listColumns :: TableName -> Database -> [String]
+listColumns :: TableName -> Database -> DataFrame
 listColumns tableName db =
   case lookup tableName db of
-    Just (DataFrame columns _) -> map (\(Column colName _) -> colName) columns
-    Nothing -> []
+    Just (DataFrame columns _) ->
+      let columnNames = map (\(Column colName _) -> [StringValue colName]) columns
+       in DataFrame [Column "Tables" StringType] columnNames
+    Nothing -> DataFrame [Column "Tables" StringType] []
 
 -- parseAndExecute :: String -> Either ErrorMessage [String]
 -- parseAndExecute statement = do
