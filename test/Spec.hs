@@ -71,7 +71,7 @@ main = hspec $ do
         Left err -> err `shouldBe` "should have successfully parsed"
         Right ps -> Lib2.executeStatement ps `shouldBe` Right distinctSelectTableTest
     it "executes MIN function" $ do
-      case Lib2.parseStatement "SELECT MIN(id) FROM employees" of
+      case Lib2.parseStatement "SELECT min(id) FROM employees" of
         Left err -> err `shouldBe` "should have successfully parsed"
         Right ps -> Lib2.executeStatement ps `shouldBe` Right minTableTest
     -- it "executes AVG function" $ do
@@ -118,8 +118,8 @@ distinctSelectTableTest =
 minTableTest :: DataFrame
 minTableTest =
   DataFrame
-    [Column "min(id)" StringType]
-    [ [StringValue "1"]
+    [Column "min(id)" IntegerType]
+    [ [IntegerValue 1]
     ]
 
 -- avgTableTest :: DataFrame

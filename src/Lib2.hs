@@ -13,7 +13,7 @@ import Data.List
 import Data.List (isInfixOf, isPrefixOf, stripPrefix, tails)
 import Data.Maybe
 import Data.Ord (comparing)
-import DataFrame (Column (..), ColumnType (StringType), DataFrame (DataFrame), Row (..), Value (..))
+import DataFrame (Column (..), ColumnType (IntegerType, StringType), DataFrame (DataFrame), Row (..), Value (..))
 import GHC.RTS.Flags (DebugFlags (stm))
 import InMemoryTables (TableName, database)
 import Lib1 (renderDataFrameAsTable)
@@ -105,8 +105,12 @@ executeStatement (Select columns tableName boolMin minColName boolAvg avgColName
         then Left "Only one column can be selected when using function MIN"
         else do
           let minResult = extractMinValueFromColumn tableName minColName
-          let minTable = DataFrame [Column ("min(" ++ minColName ++ ")") (StringType)] [[minResult]]
-          Right minTable
+          let minTableString = DataFrame [Column ("min(" ++ minColName ++ ")") StringType] [[minResult]]
+          case minResult of
+            IntegerValue intValue -> do
+              let minTable = DataFrame [Column ("min(" ++ minColName ++ ")") IntegerType] [[minResult]]
+              Right minTable
+            _ -> Right minTableString
     else
       if boolAvg
         then do
@@ -280,16 +284,28 @@ extractMinValueFromColumn tableName columnName =
    in case getColumnIndex dataFrame columnName of
         Just columnIndex ->
           let values = getColumnValues dataFrame columnIndex
-           in case filterValues values of
-                [] -> NullValue
-                nonNullValues ->
-                  let minVal = minimumBy (comparing getValueForComparison) nonNullValues
-                   in case minVal of
-                        StringValue minStr -> StringValue minStr
-                        IntegerValue minInt -> IntegerValue minInt
-                        BoolValue minBool -> BoolValue minBool
-                        _ -> NullValue
+              filteredValues = filterValues values
+           in case getMinimumValue filteredValues of
+                Just minVal -> minVal
+                Nothing -> NullValue
         Nothing -> NullValue
+
+getMinimumValue :: [Value] -> Maybe Value
+getMinimumValue [] = Nothing
+getMinimumValue (x : xs) = Just (findMinimum x xs)
+
+findMinimum :: Value -> [Value] -> Value
+findMinimum currentMin [] = currentMin
+findMinimum currentMin (x : xs)
+  | x `isLessThan` currentMin = findMinimum x xs
+  | otherwise = findMinimum currentMin xs
+
+isLessThan :: Value -> Value -> Bool
+isLessThan (IntegerValue x) (IntegerValue y) = x < y
+isLessThan (IntegerValue x) (StringValue y) = show x < y
+isLessThan (StringValue x) (IntegerValue y) = x < show y
+isLessThan (StringValue x) (StringValue y) = x < y
+isLessThan _ _ = False
 
 getValueForComparison :: Value -> (String, Integer, Bool)
 getValueForComparison (StringValue str) = (str, 0, False)
