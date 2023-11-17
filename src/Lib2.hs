@@ -135,10 +135,35 @@ executeStatement (Select columns tableName boolMin minColName boolAvg avgColName
                 then do
                   let (column1, value1) = extractConditionParts con1
                   let (column2, value2) = extractConditionParts con2
-                  let filteredTable = filterTableWithWhereAnd column1 value1 column2 value2 table
-                  Right filteredTable
+                  if con1 == con2
+                    then do
+                      let filteredTable = filterTableWithSingleCondition column1 value1 table
+                      Right filteredTable
+                    else do
+                      let filteredTable = filterTableWithWhereAnd column1 value1 column2 value2 table
+                      Right filteredTable
                 else Right $ selectColumns table columnsToRender
 executeStatement _ = Left "Not implemented: executeStatement"
+
+filterTableWithSingleCondition :: String -> String -> DataFrame -> DataFrame
+filterTableWithSingleCondition column value table =
+  filterTableWithWhereAnd column value column value table
+
+intersectTables :: DataFrame -> DataFrame -> DataFrame
+intersectTables (DataFrame cols1 rows1) (DataFrame cols2 rows2) =
+  let commonCols = intersectBy (\(Column name1 _) (Column name2 _) -> name1 == name2) cols1 cols2
+      colIndices1 = map (colNameToIndex cols1) commonCols
+      colIndices2 = map (colNameToIndex cols2) commonCols
+      filteredRows1 = map (selectRowIndices colIndices1) rows1
+      filteredRows2 = map (selectRowIndices colIndices2) rows2
+      commonRows = filter (`elem` filteredRows2) filteredRows1
+   in DataFrame commonCols commonRows
+
+colNameToIndex :: [Column] -> Column -> Int
+colNameToIndex cols col = fromMaybe 0 (elemIndex col cols)
+
+selectRowIndices :: [Int] -> Row -> Row
+selectRowIndices indices row = [row !! index | index <- indices]
 
 -- Helper function to extract column name and value from condition
 extractConditionParts :: String -> (String, String)
@@ -229,11 +254,13 @@ containsAvg :: String -> Bool
 containsAvg input = "AVG" `isInfixOf` (map toUpper input)
 
 containsWhereAnd :: String -> Bool
-containsWhereAnd input = "AND" `isInfixOf` (map toUpper input)
+containsWhereAnd input =
+  ("AND" `isInfixOf` (map toUpper input)) || ("WHERE" `isInfixOf` (map toUpper input))
 
 containsWhereBool :: String -> Bool
 containsWhereBool input =
-  "FALSE" `isInfixOf` (map toUpper input) || "TRUE" `isInfixOf` (map toUpper input)
+  ("FALSE" `isInfixOf` (map toUpper input) && "WHERE" `isInfixOf` (map toUpper input))
+    || ("TRUE" `isInfixOf` (map toUpper input) && "WHERE" `isInfixOf` (map toUpper input))
 
 extractMinColumn :: String -> Maybe String
 extractMinColumn str = case splitAt 4 str of
@@ -275,9 +302,16 @@ extractFirstCondition input =
 
 extractSecondCondition :: String -> Maybe String
 extractSecondCondition input =
-  case dropWhile (/= "AND") (words input) of
-    ("AND" : rest) -> Just (unwords rest)
-    _ -> Nothing
+  let wordsList = words input
+   in case "AND" `elem` wordsList of
+        True -> case dropWhile (/= "AND") wordsList of
+          ("AND" : rest) -> Just (unwords rest)
+          _ -> Nothing
+        False -> case dropWhile (/= "WHERE") wordsList of
+          ("WHERE" : rest) ->
+            case break (== "AND") rest of
+              (conditions, _) -> Just (unwords conditions)
+          _ -> Nothing
 
 extractWhereBoolCondition :: String -> Maybe String
 extractWhereBoolCondition input =
