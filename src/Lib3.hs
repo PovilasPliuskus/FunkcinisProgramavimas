@@ -51,12 +51,14 @@ executeSql sql = do
       case extractColumns sqlWithoutSelect of
         Right columns -> do
           let sqlAfterFrom = removeBeforeFrom sqlWithoutSelect
-          let parsedStatement = Select columns
-          let result = findTableByName InMemoryTables.database "employees"
-          return $ Right result
+          case extractTableNames sqlAfterFrom of
+            Right tableNames -> do
+              let parsedStatement = Select columns tableNames
+              let result = findTableByName InMemoryTables.database "employees"
+              return $ Right result
+            Left errorMessage -> return $ Left errorMessage
         Left errorMessage -> return $ Left errorMessage
-    Left errorMessage ->
-      return $ Left errorMessage
+    Left errorMessage -> return $ Left errorMessage
 
 parseSelect :: String -> Either ErrorMessage String
 parseSelect stmt =
