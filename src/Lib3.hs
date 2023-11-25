@@ -45,9 +45,13 @@ getTime = liftF $ GetTime id
 executeSql :: String -> Execution (Either ErrorMessage DataFrame)
 executeSql sql = do
   case parseSelect sql of
-    Right result -> do
-      let result = findTableByName InMemoryTables.database "employees"
-      return $ Right result
+    Right tableName -> do
+      case extractColumns sql of
+        Right columns -> do
+          let parsedStatement = Select columns
+          let result = findTableByName InMemoryTables.database "employees"
+          return $ Right result
+        Left errorMessage -> return $ Left errorMessage
     Left errorMessage ->
       return $ Left errorMessage
 
@@ -58,7 +62,7 @@ parseSelect stmt =
     _ -> Left "Error: SELECT statement not found"
 
 removeSelect :: String -> String
-removeSelect = unwords . drop 1 . words
+removeSelect = unwords . filter (/= "SELECT") . words
 
 findTableByName :: Database -> String -> DataFrame
 findTableByName ((tableName, dataFrame) : database) givenName
