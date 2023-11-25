@@ -38,9 +38,9 @@ executeSql sql = do
 
 parseSelect :: String -> Either ErrorMessage String
 parseSelect stmt =
-  if map toLower "SELECT" `elem` map (map toLower) (words stmt)
-    then Right (removeSelect stmt)
-    else Left "Error: SELECT statement not found"
+  case map toLower <$> words stmt of
+    ("select" : _) -> Right (removeSelect stmt)
+    _ -> Left "Error: SELECT statement not found"
 
 removeSelect :: String -> String
 removeSelect = unwords . drop 1 . words
