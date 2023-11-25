@@ -8,6 +8,7 @@ module Lib3
 where
 
 import Control.Monad.Free (Free (..), liftF)
+import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Char (toLower)
 import Data.Time (UTCTime)
 import DataFrame (ColumnType (BoolType), DataFrame)
@@ -46,7 +47,8 @@ executeSql :: String -> Execution (Either ErrorMessage DataFrame)
 executeSql sql = do
   case parseSelect sql of
     Right tableName -> do
-      case extractColumns sql of
+      let sqlWithoutSelect = removeSelect sql
+      case extractColumns sqlWithoutSelect of
         Right columns -> do
           let parsedStatement = Select columns
           let result = findTableByName InMemoryTables.database "employees"
@@ -62,7 +64,7 @@ parseSelect stmt =
     _ -> Left "Error: SELECT statement not found"
 
 removeSelect :: String -> String
-removeSelect = unwords . filter (/= "SELECT") . words
+removeSelect = unwords . filter (/= "select") . words . map toLower
 
 findTableByName :: Database -> String -> DataFrame
 findTableByName ((tableName, dataFrame) : database) givenName
@@ -81,3 +83,15 @@ extractColumns sql =
   where
     isFromKeyword :: String -> Bool
     isFromKeyword s = map toLower s == "from"
+
+helperFunction :: String -> Either ErrorMessage String
+helperFunction sql = do
+  case parseSelect sql of
+    Right tableName -> do
+      let sqlWithoutSelect = removeSelect sql
+      case extractColumns sqlWithoutSelect of
+        Right columns -> do
+          let parsedStatement = Select columns
+          return $ show parsedStatement
+        Left errorMessage -> Left errorMessage
+    Left errorMessage -> Left errorMessage
