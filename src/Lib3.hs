@@ -10,8 +10,9 @@ where
 import Control.Monad.Free (Free (..), liftF)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Char (isSpace, toLower)
+import Data.Maybe
 import Data.Time (UTCTime)
-import DataFrame (ColumnType (BoolType), DataFrame)
+import DataFrame (Column (..), ColumnType (IntegerType, StringType), DataFrame (DataFrame), Row (..), Value (..))
 import InMemoryTables (TableName, database)
 
 -- type TableName = String
@@ -123,10 +124,26 @@ extractTableNames sql =
           (w, s'') = break p s'
 
 createDataFrame :: ParsedStatement -> Either ErrorMessage DataFrame
-createDataFrame (Select columns [tableName]) =
+createDataFrame (Select columns [tableName]) = do
   case findTableByName InMemoryTables.database tableName of
-    Just dataFrame -> Right dataFrame
+    Just dataFrame -> do
+      let filteredDataFrame = selectColumns dataFrame columns
+      return filteredDataFrame
     Nothing -> Left $ "Error: Table '" ++ tableName ++ "' not found"
+
+selectColumns :: DataFrame -> [ColumnName] -> DataFrame
+selectColumns (DataFrame columns rows) selectedColumns =
+  let columnIndexMap = mapColumnIndex columns
+      selectedColumnIndices = mapMaybe (`lookup` columnIndexMap) selectedColumns
+      selectedColumns' = map (\i -> columns !! i) selectedColumnIndices
+      selectedRows = map (selectRow selectedColumnIndices) rows
+   in DataFrame selectedColumns' selectedRows
+
+mapColumnIndex :: [Column] -> [(String, Int)]
+mapColumnIndex columns = zip (map (\(Column name _) -> name) columns) [0 ..]
+
+selectRow :: [Int] -> Row -> Row
+selectRow indices row = map (\i -> row !! i) indices
 
 helperFunction :: String -> Either ErrorMessage String
 helperFunction sql = do
