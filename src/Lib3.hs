@@ -21,9 +21,12 @@ type ErrorMessage = String
 
 type Database = [(TableName, DataFrame)]
 
+type ColumnName = String
+
 data ParsedStatement
   = ParsedStatement
-  | Select [String]
+  | Select [ColumnName]
+  deriving (Show, Eq)
 
 data ExecutionAlgebra next
   = LoadFile TableName (FileContent -> next)
@@ -62,8 +65,15 @@ findTableByName ((tableName, dataFrame) : database) givenName
   | map toLower tableName == map toLower givenName = dataFrame
   | otherwise = findTableByName database givenName
 
-extractColumns :: String -> [String]
-extractColumns = takeWhile (not . isFromKeyword) . words
+extractColumns :: String -> Either ErrorMessage [ColumnName]
+extractColumns sql =
+  case words sql of
+    [] -> Left "Error: No columns found before FROM"
+    ws ->
+      let columns = takeWhile (not . isFromKeyword) ws
+       in if null columns
+            then Left "Error: No columns found before FROM"
+            else Right columns
   where
     isFromKeyword :: String -> Bool
     isFromKeyword s = map toLower s == "from"
