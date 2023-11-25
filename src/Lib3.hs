@@ -126,18 +126,23 @@ extractTableNames sql =
 createDataFrame :: ParsedStatement -> Either ErrorMessage DataFrame
 createDataFrame (Select columns [tableName]) = do
   case findTableByName InMemoryTables.database tableName of
-    Just dataFrame -> do
-      let filteredDataFrame = selectColumns dataFrame columns
-      return filteredDataFrame
+    Just dataFrame ->
+      let result = selectColumns dataFrame columns
+       in case result of
+            Right filteredDataFrame -> Right filteredDataFrame
+            Left errorMessage -> Left errorMessage
     Nothing -> Left $ "Error: Table '" ++ tableName ++ "' not found"
 
-selectColumns :: DataFrame -> [ColumnName] -> DataFrame
+selectColumns :: DataFrame -> [ColumnName] -> Either ErrorMessage DataFrame
 selectColumns (DataFrame columns rows) selectedColumns =
   let columnIndexMap = mapColumnIndex columns
-      selectedColumnIndices = mapMaybe (`lookup` columnIndexMap) selectedColumns
-      selectedColumns' = map (\i -> columns !! i) selectedColumnIndices
-      selectedRows = map (selectRow selectedColumnIndices) rows
-   in DataFrame selectedColumns' selectedRows
+      selectedColumnIndices = mapM (`lookup` columnIndexMap) selectedColumns
+   in case selectedColumnIndices of
+        Just indices ->
+          let selectedColumns' = map (\i -> columns !! i) indices
+              selectedRows = map (selectRow indices) rows
+           in Right (DataFrame selectedColumns' selectedRows)
+        Nothing -> Left "Error: One or more columns do not exist in the table"
 
 mapColumnIndex :: [Column] -> [(String, Int)]
 mapColumnIndex columns = zip (map (\(Column name _) -> name) columns) [0 ..]
