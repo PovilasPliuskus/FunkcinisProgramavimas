@@ -10,7 +10,7 @@ where
 import Control.Monad.Free (Free (..), liftF)
 import Data.Char (toLower)
 import Data.Time (UTCTime)
-import DataFrame (DataFrame)
+import DataFrame (ColumnType (BoolType), DataFrame)
 import InMemoryTables (TableName, database)
 
 -- type TableName = String
@@ -20,6 +20,10 @@ type FileContent = String
 type ErrorMessage = String
 
 type Database = [(TableName, DataFrame)]
+
+data ParsedStatement
+  = ParsedStatement
+  | Select [String]
 
 data ExecutionAlgebra next
   = LoadFile TableName (FileContent -> next)
@@ -57,3 +61,9 @@ findTableByName :: Database -> String -> DataFrame
 findTableByName ((tableName, dataFrame) : database) givenName
   | map toLower tableName == map toLower givenName = dataFrame
   | otherwise = findTableByName database givenName
+
+extractColumns :: String -> [String]
+extractColumns = takeWhile (not . isFromKeyword) . words
+  where
+    isFromKeyword :: String -> Bool
+    isFromKeyword s = map toLower s == "from"
