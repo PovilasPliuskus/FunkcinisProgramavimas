@@ -3,23 +3,26 @@
 module Lib3
   ( executeSql,
     Execution,
-    ExecutionAlgebra(..)
+    ExecutionAlgebra (..),
   )
 where
 
 import Control.Monad.Free (Free (..), liftF)
+import Data.Char (toLower)
+import Data.Time (UTCTime)
 import DataFrame (DataFrame)
-import Data.Time ( UTCTime )
 
 type TableName = String
+
 type FileContent = String
+
 type ErrorMessage = String
 
 data ExecutionAlgebra next
   = LoadFile TableName (FileContent -> next)
   | GetTime (UTCTime -> next)
   -- feel free to add more constructors here
-  deriving Functor
+  deriving (Functor)
 
 type Execution = Free ExecutionAlgebra
 
@@ -31,4 +34,13 @@ getTime = liftF $ GetTime id
 
 executeSql :: String -> Execution (Either ErrorMessage DataFrame)
 executeSql sql = do
-    return $ Left "implement me"
+  return $ Left "implement me"
+
+parseSelect :: String -> Either ErrorMessage String
+parseSelect stmt =
+  if map toLower "SELECT" `elem` map (map toLower) (words stmt)
+    then Right (removeSelect stmt)
+    else Left "Error: SELECT statement not found"
+
+removeSelect :: String -> String
+removeSelect = unwords . drop 1 . words
