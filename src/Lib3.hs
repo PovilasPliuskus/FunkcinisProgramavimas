@@ -9,7 +9,7 @@ where
 
 import Control.Monad.Free (Free (..), liftF)
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Data.Char (toLower)
+import Data.Char (isSpace, toLower)
 import Data.Time (UTCTime)
 import DataFrame (ColumnType (BoolType), DataFrame)
 import InMemoryTables (TableName, database)
@@ -74,16 +74,23 @@ findTableByName ((tableName, dataFrame) : database) givenName
 
 extractColumns :: String -> Either ErrorMessage [ColumnName]
 extractColumns sql =
-  case words sql of
+  case wordsWhen (\c -> isSpace c || c == ',') sql of
     [] -> Left "Error: No columns found before FROM"
     ws ->
-      let columns = takeWhile (not . isFromKeyword) ws
+      let columns = map (filter (/= ',')) $ takeWhile (not . isFromKeyword) ws
        in if null columns
             then Left "Error: No columns found before FROM"
             else Right columns
   where
     isFromKeyword :: String -> Bool
     isFromKeyword s = map toLower s == "from"
+
+    wordsWhen :: (Char -> Bool) -> String -> [String]
+    wordsWhen p s = case dropWhile p s of
+      "" -> []
+      s' -> w : wordsWhen p s''
+        where
+          (w, s'') = break p s'
 
 removeBeforeFrom :: String -> String
 removeBeforeFrom = unwords . drop 1 . dropWhile (/= "from") . words . map toLower
