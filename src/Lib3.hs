@@ -53,10 +53,9 @@ executeSql sql = do
           let sqlAfterFrom = removeBeforeFrom sqlWithoutSelect
           case extractTableNames sqlAfterFrom of
             Right tableNames -> do
-              let parsedStatement = Select columns tableNames
-              case findTableByName InMemoryTables.database "employees" of
-                Just dataFrame -> return $ Right dataFrame
-                Nothing -> return $ Left "Error: Table not found"
+              case createDataFrame (Select columns tableNames) of
+                Right dataFrame -> return $ Right dataFrame
+                Left errorMessage -> return $ Left errorMessage
             Left errorMessage -> return $ Left errorMessage
         Left errorMessage -> return $ Left errorMessage
     Left errorMessage -> return $ Left errorMessage
@@ -123,8 +122,11 @@ extractTableNames sql =
         where
           (w, s'') = break p s'
 
--- createDataFrame :: ParsedStatement -> Either ErrorMessage DataFrame
--- createDataFrame (Select columns tableNames) =
+createDataFrame :: ParsedStatement -> Either ErrorMessage DataFrame
+createDataFrame (Select columns [tableName]) =
+  case findTableByName InMemoryTables.database tableName of
+    Just dataFrame -> Right dataFrame
+    Nothing -> Left $ "Error: Table '" ++ tableName ++ "' not found"
 
 helperFunction :: String -> Either ErrorMessage String
 helperFunction sql = do
