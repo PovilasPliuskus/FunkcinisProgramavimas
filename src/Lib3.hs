@@ -11,12 +11,15 @@ import Control.Monad.Free (Free (..), liftF)
 import Data.Char (toLower)
 import Data.Time (UTCTime)
 import DataFrame (DataFrame)
+import InMemoryTables (TableName, database)
 
-type TableName = String
+-- type TableName = String
 
 type FileContent = String
 
 type ErrorMessage = String
+
+type Database = [(TableName, DataFrame)]
 
 data ExecutionAlgebra next
   = LoadFile TableName (FileContent -> next)
@@ -34,7 +37,12 @@ getTime = liftF $ GetTime id
 
 executeSql :: String -> Execution (Either ErrorMessage DataFrame)
 executeSql sql = do
-  return $ Left "implement me"
+  case parseSelect sql of
+    Right result -> do
+      let result = findTableByName InMemoryTables.database "employees"
+      return $ Right result
+    Left errorMessage ->
+      return $ Left errorMessage
 
 parseSelect :: String -> Either ErrorMessage String
 parseSelect stmt =
@@ -44,3 +52,8 @@ parseSelect stmt =
 
 removeSelect :: String -> String
 removeSelect = unwords . drop 1 . words
+
+findTableByName :: Database -> String -> DataFrame
+findTableByName ((tableName, dataFrame) : database) givenName
+  | map toLower tableName == map toLower givenName = dataFrame
+  | otherwise = findTableByName database givenName
