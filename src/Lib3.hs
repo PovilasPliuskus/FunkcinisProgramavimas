@@ -54,8 +54,9 @@ executeSql sql = do
           case extractTableNames sqlAfterFrom of
             Right tableNames -> do
               let parsedStatement = Select columns tableNames
-              let result = findTableByName InMemoryTables.database "employees"
-              return $ Right result
+              case findTableByName InMemoryTables.database "employees" of
+                Just dataFrame -> return $ Right dataFrame
+                Nothing -> return $ Left "Error: Table not found"
             Left errorMessage -> return $ Left errorMessage
         Left errorMessage -> return $ Left errorMessage
     Left errorMessage -> return $ Left errorMessage
@@ -69,9 +70,10 @@ parseSelect stmt =
 removeSelect :: String -> String
 removeSelect = unwords . filter (/= "select") . words . map toLower
 
-findTableByName :: Database -> String -> DataFrame
+findTableByName :: Database -> String -> Maybe DataFrame
+findTableByName [] _ = Nothing
 findTableByName ((tableName, dataFrame) : database) givenName
-  | map toLower tableName == map toLower givenName = dataFrame
+  | map toLower tableName == map toLower givenName = Just dataFrame
   | otherwise = findTableByName database givenName
 
 extractColumns :: String -> Either ErrorMessage [ColumnName]
@@ -120,6 +122,9 @@ extractTableNames sql =
       s' -> w : wordsWhen p s''
         where
           (w, s'') = break p s'
+
+-- createDataFrame :: ParsedStatement -> Either ErrorMessage DataFrame
+-- createDataFrame (Select columns tableNames) =
 
 helperFunction :: String -> Either ErrorMessage String
 helperFunction sql = do
