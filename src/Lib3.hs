@@ -97,7 +97,7 @@ helperFunction sql = do
         Right columns -> do
           let sqlAfterFrom = removeBeforeFrom sqlWithoutSelect
           let parsedStatement = Select columns
-          -- return $ show parsedStatement
-          return $ sqlAfterFrom
+          return $ show parsedStatement
+        -- return $ sqlAfterFrom
         Left errorMessage -> Left errorMessage
     Left errorMessage -> Left errorMessage
