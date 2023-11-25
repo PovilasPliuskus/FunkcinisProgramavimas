@@ -50,6 +50,7 @@ executeSql sql = do
       let sqlWithoutSelect = removeSelect sql
       case extractColumns sqlWithoutSelect of
         Right columns -> do
+          let sqlAfterFrom = removeBeforeFrom sqlWithoutSelect
           let parsedStatement = Select columns
           let result = findTableByName InMemoryTables.database "employees"
           return $ Right result
@@ -84,6 +85,9 @@ extractColumns sql =
     isFromKeyword :: String -> Bool
     isFromKeyword s = map toLower s == "from"
 
+removeBeforeFrom :: String -> String
+removeBeforeFrom = unwords . drop 1 . dropWhile (/= "from") . words . map toLower
+
 helperFunction :: String -> Either ErrorMessage String
 helperFunction sql = do
   case parseSelect sql of
@@ -91,7 +95,9 @@ helperFunction sql = do
       let sqlWithoutSelect = removeSelect sql
       case extractColumns sqlWithoutSelect of
         Right columns -> do
+          let sqlAfterFrom = removeBeforeFrom sqlWithoutSelect
           let parsedStatement = Select columns
-          return $ show parsedStatement
+          -- return $ show parsedStatement
+          return $ sqlAfterFrom
         Left errorMessage -> Left errorMessage
     Left errorMessage -> Left errorMessage
