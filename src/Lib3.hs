@@ -26,7 +26,7 @@ type ColumnName = String
 
 data ParsedStatement
   = ParsedStatement
-  | Select [ColumnName]
+  | Select [ColumnName] [TableName]
   deriving (Show, Eq)
 
 data ExecutionAlgebra next
@@ -95,6 +95,30 @@ extractColumns sql =
 removeBeforeFrom :: String -> String
 removeBeforeFrom = unwords . drop 1 . dropWhile (/= "from") . words . map toLower
 
+extractTableNames :: String -> Either ErrorMessage [TableName]
+extractTableNames sql =
+  case wordsWhen (\c -> isSpace c || c == ',') sql of
+    [] -> Left "Error: No table names found"
+    ws ->
+      let tableNames = map (removeSemicolon . filter (/= ',')) $ takeWhile (not . isSemicolonOrWhereKeyword) ws
+       in if null tableNames
+            then Left "Error: No table names found"
+            else Right tableNames
+  where
+    isSemicolonOrWhereKeyword :: String -> Bool
+    isSemicolonOrWhereKeyword s =
+      map toLower (removeSemicolon s) == "where"
+
+    removeSemicolon :: String -> String
+    removeSemicolon = filter (/= ';')
+
+    wordsWhen :: (Char -> Bool) -> String -> [String]
+    wordsWhen p s = case dropWhile p s of
+      "" -> []
+      s' -> w : wordsWhen p s''
+        where
+          (w, s'') = break p s'
+
 helperFunction :: String -> Either ErrorMessage String
 helperFunction sql = do
   case parseSelect sql of
@@ -103,8 +127,11 @@ helperFunction sql = do
       case extractColumns sqlWithoutSelect of
         Right columns -> do
           let sqlAfterFrom = removeBeforeFrom sqlWithoutSelect
-          let parsedStatement = Select columns
-          return $ show parsedStatement
-        -- return $ sqlAfterFrom
+          case extractTableNames sqlAfterFrom of
+            Right tableNames -> do
+              let parsedStatement = Select columns tableNames
+              return $ show parsedStatement
+            -- return $ sqlAfterFrom
+            Left errorMessage -> Left errorMessage
         Left errorMessage -> Left errorMessage
     Left errorMessage -> Left errorMessage
