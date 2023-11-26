@@ -7,12 +7,13 @@ module Lib3
   )
 where
 
+import Control.Monad (foldM)
 import Control.Monad.Free (Free (..), liftF)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Char (isSpace, toLower)
 import Data.Maybe
 import Data.Time (UTCTime)
-import DataFrame (Column (..), ColumnType (IntegerType, StringType), DataFrame (DataFrame), Row (..), Value (..))
+import DataFrame (Column (..), ColumnType (..), DataFrame (..), Row (..), Value (..))
 import InMemoryTables (TableName, database)
 
 -- type TableName = String
@@ -70,10 +71,10 @@ parseSelect stmt =
 removeSelect :: String -> String
 removeSelect = unwords . filter (/= "select") . words . map toLower
 
-findTableByName :: Database -> String -> Maybe DataFrame
-findTableByName [] _ = Nothing
+findTableByName :: Database -> String -> Either ErrorMessage DataFrame
+findTableByName [] _ = Left "Error: Table not found"
 findTableByName ((tableName, dataFrame) : database) givenName
-  | map toLower tableName == map toLower givenName = Just dataFrame
+  | map toLower tableName == map toLower givenName = Right dataFrame
   | otherwise = findTableByName database givenName
 
 extractColumns :: String -> Either ErrorMessage [ColumnName]
@@ -124,14 +125,26 @@ extractTableNames sql =
           (w, s'') = break p s'
 
 createDataFrame :: ParsedStatement -> Either ErrorMessage DataFrame
-createDataFrame (Select columns [tableName]) = do
-  case findTableByName InMemoryTables.database tableName of
-    Just dataFrame ->
-      let result = selectColumns dataFrame columns
-       in case result of
-            Right filteredDataFrame -> Right filteredDataFrame
-            Left errorMessage -> Left errorMessage
-    Nothing -> Left $ "Error: Table '" ++ tableName ++ "' not found"
+createDataFrame (Select columns tableNames) = do
+  dataFrames <- mapM (\tableName -> findTableByName InMemoryTables.database tableName) tableNames
+  combinedDataFrame <- combineDataFrames dataFrames
+  result <- selectColumns combinedDataFrame columns
+  return result
+
+combineDataFrames :: [DataFrame] -> Either ErrorMessage DataFrame
+combineDataFrames [] = Left "Error: No DataFrames to combine"
+combineDataFrames (firstDataFrame : restDataFrames) =
+  foldM combineTwoDataFrames firstDataFrame restDataFrames
+
+combineTwoDataFrames :: DataFrame -> DataFrame -> Either ErrorMessage DataFrame
+combineTwoDataFrames (DataFrame cols1 rows1) (DataFrame cols2 rows2) =
+  case (cols1, cols2) of
+    ([], _) -> Left "Error: First DataFrame has no columns"
+    (_, []) -> Left "Error: Second DataFrame has no columns"
+    (_, _) ->
+      let combinedColumns = cols1 ++ cols2
+          combinedRows = [row1 ++ row2 | row1 <- rows1, row2 <- rows2]
+       in Right (DataFrame combinedColumns combinedRows)
 
 selectColumns :: DataFrame -> [ColumnName] -> Either ErrorMessage DataFrame
 selectColumns (DataFrame columns rows) selectedColumns =
