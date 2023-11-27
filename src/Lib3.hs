@@ -18,6 +18,8 @@ import InMemoryTables (TableName, database)
 
 -- type TableName = String
 
+type ContainsWhere = Bool
+
 type FileContent = String
 
 type ErrorMessage = String
@@ -28,7 +30,7 @@ type ColumnName = String
 
 data ParsedStatement
   = ParsedStatement
-  | Select [ColumnName] [TableName]
+  | Select [ColumnName] [TableName] ContainsWhere
   deriving (Show, Eq)
 
 data ExecutionAlgebra next
@@ -49,15 +51,19 @@ executeSql :: String -> Execution (Either ErrorMessage DataFrame)
 executeSql sql = do
   case parseSelect sql of
     Right tableName -> do
+      let hasWhere = containsWhere sql
       let sqlWithoutSelect = removeSelect sql
       case extractColumns sqlWithoutSelect of
         Right columns -> do
           let sqlAfterFrom = removeBeforeFrom sqlWithoutSelect
           case extractTableNames sqlAfterFrom of
             Right tableNames -> do
-              case createDataFrame (Select columns tableNames) of
-                Right dataFrame -> return $ Right dataFrame
-                Left errorMessage -> return $ Left errorMessage
+              case hasWhere of
+                True -> return $ Left "DEBUG: Where was found"
+                False ->
+                  case createDataFrame (Select columns tableNames hasWhere) of
+                    Right dataFrame -> return $ Right dataFrame
+                    Left errorMessage -> return $ Left errorMessage
             Left errorMessage -> return $ Left errorMessage
         Left errorMessage -> return $ Left errorMessage
     Left errorMessage -> return $ Left errorMessage
@@ -100,6 +106,14 @@ extractColumns sql =
 removeBeforeFrom :: String -> String
 removeBeforeFrom = unwords . drop 1 . dropWhile (/= "from") . words . map toLower
 
+removeBeforeWhere :: String -> String
+removeBeforeWhere input = case break (== "where") (words (map toLower input)) of
+  (_, []) -> input
+  (_, rest) -> unwords rest
+
+containsWhere :: String -> Bool
+containsWhere input = "where" `elem` words (map toLower input)
+
 extractTableNames :: String -> Either ErrorMessage [TableName]
 extractTableNames sql =
   case wordsWhen (\c -> isSpace c || c == ',') sql of
@@ -125,7 +139,7 @@ extractTableNames sql =
           (w, s'') = break p s'
 
 createDataFrame :: ParsedStatement -> Either ErrorMessage DataFrame
-createDataFrame (Select columns tableNames) = do
+createDataFrame (Select columns tableNames whereBool) = do
   dataFrames <- mapM (\tableName -> findTableByName InMemoryTables.database tableName) tableNames
   combinedDataFrame <- combineDataFrames dataFrames
   result <- selectColumns combinedDataFrame columns
@@ -168,14 +182,19 @@ helperFunction sql = do
   case parseSelect sql of
     Right tableName -> do
       let sqlWithoutSelect = removeSelect sql
+      let hasWhere = containsWhere sqlWithoutSelect
       case extractColumns sqlWithoutSelect of
         Right columns -> do
           let sqlAfterFrom = removeBeforeFrom sqlWithoutSelect
           case extractTableNames sqlAfterFrom of
             Right tableNames -> do
-              let parsedStatement = Select columns tableNames
-              return $ show parsedStatement
-            -- return $ sqlAfterFrom
+              case hasWhere of
+                False -> return $ "Does not have WHERE"
+                True -> return $ "Has Where"
+            -- let parsedStatement = Select columns tableNames hasWhere
+            -- let result = if hasWhere then removeBeforeWhere sqlAfterFrom else "This can be executed"
+            -- return $ show parsedStatement
+            -- return result
             Left errorMessage -> Left errorMessage
         Left errorMessage -> Left errorMessage
     Left errorMessage -> Left errorMessage
