@@ -10,10 +10,14 @@ where
 import Control.Monad (foldM)
 import Control.Monad.Free (Free (..), liftF)
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Data.Char (isSpace, toLower)
+import Data.Char (isSpace, toLower, toUpper)
+import Data.List
+import Data.List (isInfixOf, isPrefixOf, stripPrefix, tails)
 import Data.Maybe
+import Data.Ord (comparing)
 import Data.Time (UTCTime)
 import DataFrame (Column (..), ColumnType (..), DataFrame (..), Row (..), Value (..))
+import GHC.RTS.Flags (DebugFlags (stm))
 import InMemoryTables (TableName, database)
 
 -- type TableName = String
@@ -64,7 +68,12 @@ executeSql sql = do
                 True -> do
                   let condition = removeBeforeWhere sqlAfterFrom
                   let conditionNoSemicolon = removeTrailingSemicolon condition
-                  return $ Left conditionNoSemicolon
+                  let (column, value) = extractConditionParts condition
+                  case createDataFrame (Select columns tableNames hasWhere conditionNoSemicolon) of
+                    Right dataFrame -> do
+                      let filteredTable = filterTable column value dataFrame
+                      return $ Right filteredTable
+                    Left errorMessage -> return $ Left errorMessage
                 False ->
                   case createDataFrame (Select columns tableNames hasWhere "") of
                     Right dataFrame -> return $ Right dataFrame
@@ -72,6 +81,37 @@ executeSql sql = do
             Left errorMessage -> return $ Left errorMessage
         Left errorMessage -> return $ Left errorMessage
     Left errorMessage -> return $ Left errorMessage
+
+extractConditionParts :: String -> (String, String)
+extractConditionParts condition =
+  case words condition of
+    [columnName, "=", value] -> (columnName, value)
+    _ -> ("", "")
+
+filterTable :: String -> String -> DataFrame -> DataFrame
+filterTable column value table =
+  let columnIndex = getColumnIndex table column
+      filteredRows = filter (\row -> checkCondition row columnIndex value) (dataRows table)
+   in DataFrame (columns table) filteredRows
+  where
+    checkCondition :: Row -> Maybe Int -> String -> Bool
+    checkCondition row (Just columnIndex) value =
+      case row !! columnIndex of
+        StringValue str -> str == value
+        IntegerValue int -> show int == value
+        BoolValue bool -> show bool == value
+        _ -> False
+    checkCondition _ _ _ = False
+
+columns :: DataFrame -> [Column]
+columns (DataFrame cols _) = cols
+
+dataRows :: DataFrame -> [[Value]]
+dataRows (DataFrame _ rows) = rows
+
+getColumnIndex :: DataFrame -> String -> Maybe Int
+getColumnIndex (DataFrame columns _) columnName =
+  elemIndex columnName (map (\(Column name _) -> name) columns)
 
 parseSelect :: String -> Either ErrorMessage String
 parseSelect stmt =
