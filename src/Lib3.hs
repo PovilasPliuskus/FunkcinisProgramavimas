@@ -66,10 +66,9 @@ executeSql sql = do
             Right tableNames -> do
               case hasWhere of
                 True -> do
-                  let condition = removeBeforeWhere sqlAfterFrom
-                  let conditionNoSemicolon = removeTrailingSemicolon condition
+                  let condition = removeTrailingSemicolon (removeBeforeWhere sqlAfterFrom)
                   let (column, value) = extractConditionParts condition
-                  case createDataFrame (Select columns tableNames hasWhere conditionNoSemicolon) of
+                  case createDataFrame (Select columns tableNames hasWhere condition) of
                     Right dataFrame -> do
                       let filteredTable = filterTable column value dataFrame
                       return $ Right filteredTable
@@ -85,7 +84,7 @@ executeSql sql = do
 extractConditionParts :: String -> (String, String)
 extractConditionParts condition =
   case words condition of
-    [columnName, "=", value] -> (columnName, value)
+    [columnName, "=", value] -> (map toLower columnName, map toLower value)
     _ -> ("", "")
 
 filterTable :: String -> String -> DataFrame -> DataFrame
@@ -96,10 +95,11 @@ filterTable column value table =
   where
     checkCondition :: Row -> Maybe Int -> String -> Bool
     checkCondition row (Just columnIndex) value =
-      case row !! columnIndex of
-        StringValue str -> str == value
-        IntegerValue int -> show int == value
-        BoolValue bool -> show bool == value
+      case (row !! columnIndex, value) of
+        (StringValue str, _) -> str == value
+        (IntegerValue int, _) -> show int == value
+        (BoolValue bool, "true") -> bool
+        (BoolValue bool, "false") -> not bool
         _ -> False
     checkCondition _ _ _ = False
 
@@ -209,7 +209,7 @@ combineTwoDataFrames (DataFrame cols1 rows1) (DataFrame cols2 rows2) =
     (_, []) -> Left "Error: Second DataFrame has no columns"
     (_, _) ->
       let combinedColumns = cols1 ++ cols2
-          combinedRows = [row1 ++ row2 | row1 <- rows1, row2 <- rows2]
+          combinedRows = if null rows1 || null rows2 then [] else [row1 ++ row2 | row1 <- rows1, row2 <- rows2]
        in Right (DataFrame combinedColumns combinedRows)
 
 selectColumns :: DataFrame -> [ColumnName] -> Either ErrorMessage DataFrame
