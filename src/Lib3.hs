@@ -96,7 +96,7 @@ filterTable column value table =
     checkCondition :: Row -> Maybe Int -> String -> Bool
     checkCondition row (Just columnIndex) value =
       case (row !! columnIndex, value) of
-        (StringValue str, _) -> str == value
+        (StringValue str, _) -> map toLower str == map toLower value
         (IntegerValue int, _) -> show int == value
         (BoolValue bool, "true") -> bool
         (BoolValue bool, "false") -> not bool
