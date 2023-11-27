@@ -18,6 +18,8 @@ import InMemoryTables (TableName, database)
 
 -- type TableName = String
 
+type Condition = String
+
 type ContainsWhere = Bool
 
 type FileContent = String
@@ -30,7 +32,7 @@ type ColumnName = String
 
 data ParsedStatement
   = ParsedStatement
-  | Select [ColumnName] [TableName] ContainsWhere
+  | Select [ColumnName] [TableName] ContainsWhere Condition
   deriving (Show, Eq)
 
 data ExecutionAlgebra next
@@ -59,9 +61,12 @@ executeSql sql = do
           case extractTableNames sqlAfterFrom of
             Right tableNames -> do
               case hasWhere of
-                True -> return $ Left "DEBUG: Where was found"
+                True -> do
+                  let condition = removeBeforeWhere sqlAfterFrom
+                  let conditionNoSemicolon = removeTrailingSemicolon condition
+                  return $ Left conditionNoSemicolon
                 False ->
-                  case createDataFrame (Select columns tableNames hasWhere) of
+                  case createDataFrame (Select columns tableNames hasWhere "") of
                     Right dataFrame -> return $ Right dataFrame
                     Left errorMessage -> return $ Left errorMessage
             Left errorMessage -> return $ Left errorMessage
@@ -107,9 +112,16 @@ removeBeforeFrom :: String -> String
 removeBeforeFrom = unwords . drop 1 . dropWhile (/= "from") . words . map toLower
 
 removeBeforeWhere :: String -> String
-removeBeforeWhere input = case break (== "where") (words (map toLower input)) of
-  (_, []) -> input
-  (_, rest) -> unwords rest
+removeBeforeWhere input =
+  case break (== "where") (words (map toLower input)) of
+    (_, []) -> input
+    (_, rest) -> unwords (drop 1 rest)
+
+removeTrailingSemicolon :: String -> String
+removeTrailingSemicolon input =
+  if last input == ';'
+    then init input
+    else input
 
 containsWhere :: String -> Bool
 containsWhere input = "where" `elem` words (map toLower input)
@@ -139,7 +151,7 @@ extractTableNames sql =
           (w, s'') = break p s'
 
 createDataFrame :: ParsedStatement -> Either ErrorMessage DataFrame
-createDataFrame (Select columns tableNames whereBool) = do
+createDataFrame (Select columns tableNames whereBool con) = do
   dataFrames <- mapM (\tableName -> findTableByName InMemoryTables.database tableName) tableNames
   combinedDataFrame <- combineDataFrames dataFrames
   result <- selectColumns combinedDataFrame columns
@@ -190,7 +202,9 @@ helperFunction sql = do
             Right tableNames -> do
               case hasWhere of
                 False -> return $ "Does not have WHERE"
-                True -> return $ "Has Where"
+                True -> do
+                  let result = removeBeforeWhere sqlAfterFrom
+                  return $ removeTrailingSemicolon result
             -- let parsedStatement = Select columns tableNames hasWhere
             -- let result = if hasWhere then removeBeforeWhere sqlAfterFrom else "This can be executed"
             -- return $ show parsedStatement
