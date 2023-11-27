@@ -10,13 +10,21 @@ where
 import Control.Monad (foldM)
 import Control.Monad.Free (Free (..), liftF)
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Data.Char (isSpace, toLower)
+import Data.Char (isSpace, toLower, toUpper)
+import Data.List
+import Data.List (isInfixOf, isPrefixOf, stripPrefix, tails)
 import Data.Maybe
+import Data.Ord (comparing)
 import Data.Time (UTCTime)
 import DataFrame (Column (..), ColumnType (..), DataFrame (..), Row (..), Value (..))
+import GHC.RTS.Flags (DebugFlags (stm))
 import InMemoryTables (TableName, database)
 
 -- type TableName = String
+
+type Condition = String
+
+type ContainsWhere = Bool
 
 type FileContent = String
 
@@ -28,7 +36,7 @@ type ColumnName = String
 
 data ParsedStatement
   = ParsedStatement
-  | Select [ColumnName] [TableName]
+  | Select [ColumnName] [TableName] ContainsWhere Condition
   deriving (Show, Eq)
 
 data ExecutionAlgebra next
@@ -49,18 +57,61 @@ executeSql :: String -> Execution (Either ErrorMessage DataFrame)
 executeSql sql = do
   case parseSelect sql of
     Right tableName -> do
+      let hasWhere = containsWhere sql
       let sqlWithoutSelect = removeSelect sql
       case extractColumns sqlWithoutSelect of
         Right columns -> do
           let sqlAfterFrom = removeBeforeFrom sqlWithoutSelect
           case extractTableNames sqlAfterFrom of
             Right tableNames -> do
-              case createDataFrame (Select columns tableNames) of
-                Right dataFrame -> return $ Right dataFrame
-                Left errorMessage -> return $ Left errorMessage
+              case hasWhere of
+                True -> do
+                  let condition = removeTrailingSemicolon (removeBeforeWhere sqlAfterFrom)
+                  let (column, value) = extractConditionParts condition
+                  case createDataFrame (Select columns tableNames hasWhere condition) of
+                    Right dataFrame -> do
+                      let filteredTable = filterTable column value dataFrame
+                      return $ Right filteredTable
+                    Left errorMessage -> return $ Left errorMessage
+                False ->
+                  case createDataFrame (Select columns tableNames hasWhere "") of
+                    Right dataFrame -> return $ Right dataFrame
+                    Left errorMessage -> return $ Left errorMessage
             Left errorMessage -> return $ Left errorMessage
         Left errorMessage -> return $ Left errorMessage
     Left errorMessage -> return $ Left errorMessage
+
+extractConditionParts :: String -> (String, String)
+extractConditionParts condition =
+  case words condition of
+    [columnName, "=", value] -> (map toLower columnName, map toLower value)
+    _ -> ("", "")
+
+filterTable :: String -> String -> DataFrame -> DataFrame
+filterTable column value table =
+  let columnIndex = getColumnIndex table column
+      filteredRows = filter (\row -> checkCondition row columnIndex value) (dataRows table)
+   in DataFrame (columns table) filteredRows
+  where
+    checkCondition :: Row -> Maybe Int -> String -> Bool
+    checkCondition row (Just columnIndex) value =
+      case (row !! columnIndex, value) of
+        (StringValue str, _) -> map toLower str == map toLower value
+        (IntegerValue int, _) -> show int == value
+        (BoolValue bool, "true") -> bool
+        (BoolValue bool, "false") -> not bool
+        _ -> False
+    checkCondition _ _ _ = False
+
+columns :: DataFrame -> [Column]
+columns (DataFrame cols _) = cols
+
+dataRows :: DataFrame -> [[Value]]
+dataRows (DataFrame _ rows) = rows
+
+getColumnIndex :: DataFrame -> String -> Maybe Int
+getColumnIndex (DataFrame columns _) columnName =
+  elemIndex columnName (map (\(Column name _) -> name) columns)
 
 parseSelect :: String -> Either ErrorMessage String
 parseSelect stmt =
@@ -100,6 +151,21 @@ extractColumns sql =
 removeBeforeFrom :: String -> String
 removeBeforeFrom = unwords . drop 1 . dropWhile (/= "from") . words . map toLower
 
+removeBeforeWhere :: String -> String
+removeBeforeWhere input =
+  case break (== "where") (words (map toLower input)) of
+    (_, []) -> input
+    (_, rest) -> unwords (drop 1 rest)
+
+removeTrailingSemicolon :: String -> String
+removeTrailingSemicolon input =
+  if last input == ';'
+    then init input
+    else input
+
+containsWhere :: String -> Bool
+containsWhere input = "where" `elem` words (map toLower input)
+
 extractTableNames :: String -> Either ErrorMessage [TableName]
 extractTableNames sql =
   case wordsWhen (\c -> isSpace c || c == ',') sql of
@@ -125,7 +191,7 @@ extractTableNames sql =
           (w, s'') = break p s'
 
 createDataFrame :: ParsedStatement -> Either ErrorMessage DataFrame
-createDataFrame (Select columns tableNames) = do
+createDataFrame (Select columns tableNames whereBool con) = do
   dataFrames <- mapM (\tableName -> findTableByName InMemoryTables.database tableName) tableNames
   combinedDataFrame <- combineDataFrames dataFrames
   result <- selectColumns combinedDataFrame columns
@@ -143,7 +209,7 @@ combineTwoDataFrames (DataFrame cols1 rows1) (DataFrame cols2 rows2) =
     (_, []) -> Left "Error: Second DataFrame has no columns"
     (_, _) ->
       let combinedColumns = cols1 ++ cols2
-          combinedRows = [row1 ++ row2 | row1 <- rows1, row2 <- rows2]
+          combinedRows = if null rows1 || null rows2 then [] else [row1 ++ row2 | row1 <- rows1, row2 <- rows2]
        in Right (DataFrame combinedColumns combinedRows)
 
 selectColumns :: DataFrame -> [ColumnName] -> Either ErrorMessage DataFrame
@@ -168,14 +234,21 @@ helperFunction sql = do
   case parseSelect sql of
     Right tableName -> do
       let sqlWithoutSelect = removeSelect sql
+      let hasWhere = containsWhere sqlWithoutSelect
       case extractColumns sqlWithoutSelect of
         Right columns -> do
           let sqlAfterFrom = removeBeforeFrom sqlWithoutSelect
           case extractTableNames sqlAfterFrom of
             Right tableNames -> do
-              let parsedStatement = Select columns tableNames
-              return $ show parsedStatement
-            -- return $ sqlAfterFrom
+              case hasWhere of
+                False -> return $ "Does not have WHERE"
+                True -> do
+                  let result = removeBeforeWhere sqlAfterFrom
+                  return $ removeTrailingSemicolon result
+            -- let parsedStatement = Select columns tableNames hasWhere
+            -- let result = if hasWhere then removeBeforeWhere sqlAfterFrom else "This can be executed"
+            -- return $ show parsedStatement
+            -- return result
             Left errorMessage -> Left errorMessage
         Left errorMessage -> Left errorMessage
     Left errorMessage -> Left errorMessage
