@@ -1,0 +1,15 @@
+TableName: "flags"
+columns:
+  - name: "flag"
+    type: StringType
+  - name: "value"
+    type: BoolType
+data:
+  - - StringValue: "a"
+    - BoolValue: True
+  - - StringValue: "b"
+    - BoolValue: True
+  - - StringValue: "b"
+    - BoolValue: NullValue
+  - - StringValue: "b"
+    - BoolValue: False

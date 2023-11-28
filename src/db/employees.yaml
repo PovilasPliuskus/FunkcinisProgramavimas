@@ -1,0 +1,15 @@
+TableName: "employees"
+columns:
+  - name: "id"
+    type: IntegerType
+  - name: "name"
+    type: StringType
+  - name: "surname"
+    type: StringType
+data:
+  - - IntegerValue: 1
+    - StringValue: "Vi"
+    - StringValue: "Po"
+  - - IntegerValue: 2
+    - StringValue: "Ed"
+    - StringValue: "Dl"
