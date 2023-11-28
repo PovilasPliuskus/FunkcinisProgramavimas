@@ -18,6 +18,7 @@ import Data.Ord (comparing)
 import Data.Time (TimeZone (..), UTCTime (..), getCurrentTime, utc)
 import Data.Time.Clock (UTCTime, addUTCTime, nominalDiffTimeToSeconds)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
+import Data.Yaml
 import DataFrame (Column (..), ColumnType (..), DataFrame (..), Row (..), Value (..))
 import GHC.RTS.Flags (DebugFlags (stm))
 import InMemoryTables (TableName, database)
@@ -123,7 +124,7 @@ filterTable column value table =
 columns :: DataFrame -> [Column]
 columns (DataFrame cols _) = cols
 
-dataRows :: DataFrame -> [[Value]]
+dataRows :: DataFrame -> [[DataFrame.Value]]
 dataRows (DataFrame _ rows) = rows
 
 getColumnIndex :: DataFrame -> String -> Maybe Int
