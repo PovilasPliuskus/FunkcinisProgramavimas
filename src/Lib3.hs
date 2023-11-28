@@ -54,32 +54,37 @@ getTime :: Execution UTCTime
 getTime = liftF $ GetTime id
 
 executeSql :: String -> Execution (Either ErrorMessage DataFrame)
-executeSql sql = do
-  case parseSelect sql of
-    Right tableName -> do
-      let hasWhere = containsWhere sql
-      let sqlWithoutSelect = removeSelect sql
-      case extractColumns sqlWithoutSelect of
-        Right columns -> do
-          let sqlAfterFrom = removeBeforeFrom sqlWithoutSelect
-          case extractTableNames sqlAfterFrom of
-            Right tableNames -> do
-              case hasWhere of
-                True -> do
-                  let condition = removeTrailingSemicolon (removeBeforeWhere sqlAfterFrom)
-                  let (column, value) = extractConditionParts condition
-                  case createDataFrame (Select columns tableNames hasWhere condition) of
-                    Right dataFrame -> do
-                      let filteredTable = filterTable column value dataFrame
-                      return $ Right filteredTable
-                    Left errorMessage -> return $ Left errorMessage
-                False ->
-                  case createDataFrame (Select columns tableNames hasWhere "") of
-                    Right dataFrame -> return $ Right dataFrame
-                    Left errorMessage -> return $ Left errorMessage
+executeSql sql
+  | isNowStatement sql = return $ Left "Now statement"
+  | otherwise = do
+      case parseSelect sql of
+        Right tableName -> do
+          let hasWhere = containsWhere sql
+          let sqlWithoutSelect = removeSelect sql
+          case extractColumns sqlWithoutSelect of
+            Right columns -> do
+              let sqlAfterFrom = removeBeforeFrom sqlWithoutSelect
+              case extractTableNames sqlAfterFrom of
+                Right tableNames -> do
+                  case hasWhere of
+                    True -> do
+                      let condition = removeTrailingSemicolon (removeBeforeWhere sqlAfterFrom)
+                      let (column, value) = extractConditionParts condition
+                      case createDataFrame (Select columns tableNames hasWhere condition) of
+                        Right dataFrame -> do
+                          let filteredTable = filterTable column value dataFrame
+                          return $ Right filteredTable
+                        Left errorMessage -> return $ Left errorMessage
+                    False ->
+                      case createDataFrame (Select columns tableNames hasWhere "") of
+                        Right dataFrame -> return $ Right dataFrame
+                        Left errorMessage -> return $ Left errorMessage
+                Left errorMessage -> return $ Left errorMessage
             Left errorMessage -> return $ Left errorMessage
         Left errorMessage -> return $ Left errorMessage
-    Left errorMessage -> return $ Left errorMessage
+
+isNowStatement :: String -> Bool
+isNowStatement stmt = map toLower stmt == "now()"
 
 extractConditionParts :: String -> (String, String)
 extractConditionParts condition =
