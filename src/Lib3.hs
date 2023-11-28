@@ -15,7 +15,7 @@ import Data.List
 import Data.List (isInfixOf, isPrefixOf, stripPrefix, tails)
 import Data.Maybe
 import Data.Ord (comparing)
-import Data.Time (UTCTime)
+import Data.Time (TimeZone (..), UTCTime (..), getCurrentTime, utc)
 import DataFrame (Column (..), ColumnType (..), DataFrame (..), Row (..), Value (..))
 import GHC.RTS.Flags (DebugFlags (stm))
 import InMemoryTables (TableName, database)
@@ -54,32 +54,45 @@ getTime :: Execution UTCTime
 getTime = liftF $ GetTime id
 
 executeSql :: String -> Execution (Either ErrorMessage DataFrame)
-executeSql sql = do
-  case parseSelect sql of
-    Right tableName -> do
-      let hasWhere = containsWhere sql
-      let sqlWithoutSelect = removeSelect sql
-      case extractColumns sqlWithoutSelect of
-        Right columns -> do
-          let sqlAfterFrom = removeBeforeFrom sqlWithoutSelect
-          case extractTableNames sqlAfterFrom of
-            Right tableNames -> do
-              case hasWhere of
-                True -> do
-                  let condition = removeTrailingSemicolon (removeBeforeWhere sqlAfterFrom)
-                  let (column, value) = extractConditionParts condition
-                  case createDataFrame (Select columns tableNames hasWhere condition) of
-                    Right dataFrame -> do
-                      let filteredTable = filterTable column value dataFrame
-                      return $ Right filteredTable
-                    Left errorMessage -> return $ Left errorMessage
-                False ->
-                  case createDataFrame (Select columns tableNames hasWhere "") of
-                    Right dataFrame -> return $ Right dataFrame
-                    Left errorMessage -> return $ Left errorMessage
+executeSql sql
+  | isNowStatement sql = do
+      currentTime <- getTime
+      return $ Right (createNowDataFrame currentTime)
+  | otherwise = do
+      case parseSelect sql of
+        Right tableName -> do
+          let hasWhere = containsWhere sql
+          let sqlWithoutSelect = removeSelect sql
+          case extractColumns sqlWithoutSelect of
+            Right columns -> do
+              let sqlAfterFrom = removeBeforeFrom sqlWithoutSelect
+              case extractTableNames sqlAfterFrom of
+                Right tableNames -> do
+                  case hasWhere of
+                    True -> do
+                      let condition = removeTrailingSemicolon (removeBeforeWhere sqlAfterFrom)
+                      let (column, value) = extractConditionParts condition
+                      case createDataFrame (Select columns tableNames hasWhere condition) of
+                        Right dataFrame -> do
+                          let filteredTable = filterTable column value dataFrame
+                          return $ Right filteredTable
+                        Left errorMessage -> return $ Left errorMessage
+                    False ->
+                      case createDataFrame (Select columns tableNames hasWhere "") of
+                        Right dataFrame -> return $ Right dataFrame
+                        Left errorMessage -> return $ Left errorMessage
+                Left errorMessage -> return $ Left errorMessage
             Left errorMessage -> return $ Left errorMessage
         Left errorMessage -> return $ Left errorMessage
-    Left errorMessage -> return $ Left errorMessage
+
+createNowDataFrame :: UTCTime -> DataFrame
+createNowDataFrame currentTime =
+  let nowColumn = Column "Now" (TimestampType utc)
+      nowRow = [TimestampValue currentTime]
+   in DataFrame [nowColumn] [nowRow]
+
+isNowStatement :: String -> Bool
+isNowStatement stmt = map toLower stmt == "now()"
 
 extractConditionParts :: String -> (String, String)
 extractConditionParts condition =

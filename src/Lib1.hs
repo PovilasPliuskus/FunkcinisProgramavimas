@@ -131,6 +131,7 @@ valueToString (IntegerValue x) = show x
 valueToString (StringValue x) = x
 valueToString (BoolValue x) = show x
 valueToString NullValue = "NULL"
+valueToString (TimestampValue time) = show time
 
 -- ColumnName1 | ColumnName2 | ColumnName3
 -- ------------+-------------+------------
