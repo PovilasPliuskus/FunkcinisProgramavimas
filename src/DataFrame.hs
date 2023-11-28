@@ -1,9 +1,12 @@
 module DataFrame (Column (..), ColumnType (..), Value (..), Row, DataFrame (..)) where
 
+import Data.Time (TimeZone, UTCTime)
+
 data ColumnType
   = IntegerType
   | StringType
   | BoolType
+  | TimestampType TimeZone
   deriving (Show, Eq)
 
 data Column = Column String ColumnType
@@ -14,6 +17,7 @@ data Value
   | StringValue String
   | BoolValue Bool
   | NullValue
+  | TimestampValue UTCTime
   deriving (Show, Eq)
 
 type Row = [Value]

@@ -15,7 +15,7 @@ import Data.List
 import Data.List (isInfixOf, isPrefixOf, stripPrefix, tails)
 import Data.Maybe
 import Data.Ord (comparing)
-import Data.Time (UTCTime)
+import Data.Time (TimeZone (..), UTCTime (..), getCurrentTime, utc)
 import DataFrame (Column (..), ColumnType (..), DataFrame (..), Row (..), Value (..))
 import GHC.RTS.Flags (DebugFlags (stm))
 import InMemoryTables (TableName, database)
@@ -55,7 +55,9 @@ getTime = liftF $ GetTime id
 
 executeSql :: String -> Execution (Either ErrorMessage DataFrame)
 executeSql sql
-  | isNowStatement sql = return $ Left "Now statement"
+  | isNowStatement sql = do
+      currentTime <- getTime
+      return $ Right (createNowDataFrame currentTime)
   | otherwise = do
       case parseSelect sql of
         Right tableName -> do
@@ -82,6 +84,12 @@ executeSql sql
                 Left errorMessage -> return $ Left errorMessage
             Left errorMessage -> return $ Left errorMessage
         Left errorMessage -> return $ Left errorMessage
+
+createNowDataFrame :: UTCTime -> DataFrame
+createNowDataFrame currentTime =
+  let nowColumn = Column "Now" (TimestampType utc)
+      nowRow = [TimestampValue currentTime]
+   in DataFrame [nowColumn] [nowRow]
 
 isNowStatement :: String -> Bool
 isNowStatement stmt = map toLower stmt == "now()"
