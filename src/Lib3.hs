@@ -16,6 +16,8 @@ import Data.List (isInfixOf, isPrefixOf, stripPrefix, tails)
 import Data.Maybe
 import Data.Ord (comparing)
 import Data.Time (TimeZone (..), UTCTime (..), getCurrentTime, utc)
+import Data.Time.Clock (UTCTime, addUTCTime, nominalDiffTimeToSeconds)
+import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import DataFrame (Column (..), ColumnType (..), DataFrame (..), Row (..), Value (..))
 import GHC.RTS.Flags (DebugFlags (stm))
 import InMemoryTables (TableName, database)
@@ -87,8 +89,10 @@ executeSql sql
 
 createNowDataFrame :: UTCTime -> DataFrame
 createNowDataFrame currentTime =
-  let nowColumn = Column "Now" (TimestampType utc)
-      nowRow = [TimestampValue currentTime]
+  let timeZoneOffset = 2
+      adjustedTime = addUTCTime (fromIntegral $ timeZoneOffset * 3600) currentTime
+      nowColumn = Column "Now" (TimestampType utc)
+      nowRow = [TimestampValue adjustedTime]
    in DataFrame [nowColumn] [nowRow]
 
 isNowStatement :: String -> Bool
