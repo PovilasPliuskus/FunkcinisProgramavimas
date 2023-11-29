@@ -102,12 +102,13 @@ executeSql sql
         Left errorMessage -> return $ Left errorMessage
 
 getTableNameFromFile :: FilePath -> IO ()
-getTableNameFromFile filePath = do
+getTableNameFromFile fileName = do
+  let filePath = "src/db/" ++ fileName ++ ".yaml"
   content <- BS.readFile filePath
   let parsedContent = Y.decode content :: Maybe TableEmployees
   case parsedContent of
-    Nothing -> error "Could not parse table file"
-    Just table -> putStr $ "Table name: " ++ tableName table
+    Nothing -> error $ "Could not parse table file: " ++ filePath
+    Just table -> putStr $ "Table name for " ++ filePath ++ ": " ++ tableName table
 
 createNowDataFrame :: UTCTime -> DataFrame
 createNowDataFrame currentTime =
