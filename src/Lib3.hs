@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 module Lib3
   ( executeSql,
@@ -11,6 +12,7 @@ import Control.Exception (IOException, try)
 import Control.Monad (foldM)
 import Control.Monad.Free (Free (..), liftF)
 import Control.Monad.IO.Class (MonadIO, liftIO)
+import Data.Aeson (FromJSON)
 import Data.ByteString.Char8 qualified as BS
 import Data.Char (isSpace, toLower, toUpper)
 import Data.List
@@ -21,8 +23,9 @@ import Data.Text qualified as T
 import Data.Time (TimeZone (..), UTCTime (..), getCurrentTime, utc)
 import Data.Time.Clock (UTCTime, addUTCTime, nominalDiffTimeToSeconds)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
-import Data.Yaml
+import Data.Yaml qualified as Y
 import DataFrame (Column (..), ColumnType (..), DataFrame (..), Row (..), Value (..))
+import GHC.Generics
 import GHC.RTS.Flags (DebugFlags (stm))
 import InMemoryTables (TableName, database)
 
@@ -39,6 +42,13 @@ type ErrorMessage = String
 type Database = [(TableName, DataFrame)]
 
 type ColumnName = String
+
+data TableEmployees = TableEmployees
+  { tableName :: String
+  }
+  deriving (Show, Generic)
+
+instance FromJSON TableEmployees
 
 data ParsedStatement
   = ParsedStatement
@@ -91,8 +101,13 @@ executeSql sql
             Left errorMessage -> return $ Left errorMessage
         Left errorMessage -> return $ Left errorMessage
 
-getTableNameFromFile :: FilePath -> String
-getTableNameFromFile filePath = "db/" ++ filePath ++ ".yaml"
+getTableNameFromFile :: FilePath -> IO ()
+getTableNameFromFile filePath = do
+  content <- BS.readFile filePath
+  let parsedContent = Y.decode content :: Maybe TableEmployees
+  case parsedContent of
+    Nothing -> error "Could not parse table file"
+    Just table -> putStr $ "Table name: " ++ tableName table
 
 createNowDataFrame :: UTCTime -> DataFrame
 createNowDataFrame currentTime =

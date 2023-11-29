@@ -24,6 +24,7 @@ dependencies:
   - yaml
   - text
   - bytestring >= 0.11.4.0
+  - aeson
 
 default-extensions:
   - ImportQualifiedPost
@@ -47,6 +48,7 @@ library:
     - transformers
     - text
     - bytestring >= 0.11.4.0
+    - aeson
 
 executables:
   fp2023-select-all:
@@ -64,6 +66,7 @@ executables:
       - yaml
       - text
       - bytestring >= 0.11.4.0
+      - aeson
   fp2023-select-more:
     main: Main.hs
     source-dirs: app2
@@ -79,6 +82,7 @@ executables:
       - yaml
       - text
       - bytestring >= 0.11.4.0
+      - aeson
   fp2023-manipulate:
     main: Main.hs
     source-dirs: app3
@@ -96,6 +100,7 @@ executables:
       - yaml
       - text
       - bytestring >= 0.11.4.0
+      - aeson
 
 tests:
   fp2023-test:
@@ -111,3 +116,4 @@ tests:
       - yaml
       - text
       - bytestring >= 0.11.4.0
+      - aeson
