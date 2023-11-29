@@ -49,7 +49,9 @@ library
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
   build-depends:
       base >=4.7 && <5
+    , bytestring >=0.11.4.0
     , free
+    , text
     , time
     , transformers
     , yaml
@@ -66,11 +68,13 @@ executable fp2023-manipulate
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
+    , bytestring >=0.11.4.0
     , extra
     , fp2023
     , free
     , repline
     , terminal-size
+    , text
     , time
     , yaml
   default-language: Haskell2010
@@ -86,10 +90,12 @@ executable fp2023-select-all
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
+    , bytestring >=0.11.4.0
     , extra
     , fp2023
     , repline
     , terminal-size
+    , text
     , yaml
   default-language: Haskell2010
 
@@ -104,10 +110,12 @@ executable fp2023-select-more
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
+    , bytestring >=0.11.4.0
     , extra
     , fp2023
     , repline
     , terminal-size
+    , text
     , yaml
   default-language: Haskell2010
 
@@ -123,7 +131,9 @@ test-suite fp2023-test
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
+    , bytestring >=0.11.4.0
     , fp2023
     , hspec
+    , text
     , yaml
   default-language: Haskell2010

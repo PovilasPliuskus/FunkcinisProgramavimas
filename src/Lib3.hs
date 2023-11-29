@@ -7,14 +7,17 @@ module Lib3
   )
 where
 
+import Control.Exception (IOException, try)
 import Control.Monad (foldM)
 import Control.Monad.Free (Free (..), liftF)
 import Control.Monad.IO.Class (MonadIO, liftIO)
+import Data.ByteString.Char8 qualified as BS
 import Data.Char (isSpace, toLower, toUpper)
 import Data.List
 import Data.List (isInfixOf, isPrefixOf, stripPrefix, tails)
 import Data.Maybe
 import Data.Ord (comparing)
+import Data.Text qualified as T
 import Data.Time (TimeZone (..), UTCTime (..), getCurrentTime, utc)
 import Data.Time.Clock (UTCTime, addUTCTime, nominalDiffTimeToSeconds)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
@@ -87,6 +90,9 @@ executeSql sql
                 Left errorMessage -> return $ Left errorMessage
             Left errorMessage -> return $ Left errorMessage
         Left errorMessage -> return $ Left errorMessage
+
+getTableNameFromFile :: FilePath -> String
+getTableNameFromFile filePath = "db/" ++ filePath ++ ".yaml"
 
 createNowDataFrame :: UTCTime -> DataFrame
 createNowDataFrame currentTime =

@@ -22,6 +22,8 @@ description: Please see the README on GitHub at <https://github.com/githubuser/f
 dependencies:
   - base >= 4.7 && < 5
   - yaml
+  - text
+  - bytestring >= 0.11.4.0
 
 default-extensions:
   - ImportQualifiedPost
@@ -43,6 +45,8 @@ library:
     - free
     - time
     - transformers
+    - text
+    - bytestring >= 0.11.4.0
 
 executables:
   fp2023-select-all:
@@ -58,6 +62,8 @@ executables:
       - repline
       - terminal-size
       - yaml
+      - text
+      - bytestring >= 0.11.4.0
   fp2023-select-more:
     main: Main.hs
     source-dirs: app2
@@ -71,6 +77,8 @@ executables:
       - repline
       - terminal-size
       - yaml
+      - text
+      - bytestring >= 0.11.4.0
   fp2023-manipulate:
     main: Main.hs
     source-dirs: app3
@@ -86,6 +94,8 @@ executables:
       - free
       - time
       - yaml
+      - text
+      - bytestring >= 0.11.4.0
 
 tests:
   fp2023-test:
@@ -99,3 +109,5 @@ tests:
       - fp2023
       - hspec
       - yaml
+      - text
+      - bytestring >= 0.11.4.0
