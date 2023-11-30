@@ -1,12 +1,12 @@
-TableName: "employees"
-columns:
+tableName: "employees"
+tableColumns:
   - name: "id"
     type: IntegerType
   - name: "name"
     type: StringType
   - name: "surname"
     type: StringType
-data:
+tableDataRows:
   - - IntegerValue: 1
     - StringValue: "Vi"
     - StringValue: "Po"
