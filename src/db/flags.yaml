@@ -1,15 +1,19 @@
-TableName: "flags"
-columns:
-  - name: "flag"
-    type: StringType
-  - name: "value"
-    type: BoolType
-data:
-  - - StringValue: "a"
-    - BoolValue: True
-  - - StringValue: "b"
-    - BoolValue: True
-  - - StringValue: "b"
-    - BoolValue: NullValue
-  - - StringValue: "b"
-    - BoolValue: False
+- - - flag
+    - StringType
+  - - value
+    - BoolType
+- - - contents: a
+      tag: StringValue
+    - contents: true
+      tag: BoolValue
+  - - contents: b
+      tag: StringValue
+    - contents: true
+      tag: BoolValue
+  - - contents: b
+      tag: StringValue
+    - tag: NullValue
+  - - contents: b
+      tag: StringValue
+    - contents: false
+      tag: BoolValue

@@ -14,6 +14,7 @@ import Control.Monad.Free (Free (..), liftF)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Aeson (FromJSON)
 import Data.ByteString.Char8 qualified as BS
+import Data.ByteString.Lazy.Char8 qualified as BLC
 import Data.Char (isSpace, toLower, toUpper)
 import Data.List
 import Data.List (isInfixOf, isPrefixOf, stripPrefix, tails)
@@ -23,6 +24,7 @@ import Data.Text qualified as T
 import Data.Time (TimeZone (..), UTCTime (..), getCurrentTime, utc)
 import Data.Time.Clock (UTCTime, addUTCTime, nominalDiffTimeToSeconds)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
+import Data.Yaml (FromJSON, ToJSON, encode)
 import Data.Yaml qualified as Y
 import DataFrame (Column (..), ColumnType (..), DataFrame (..), Row (..), Value (..))
 import GHC.Generics
@@ -43,12 +45,12 @@ type Database = [(TableName, DataFrame)]
 
 type ColumnName = String
 
-data TableEmployees = TableEmployees
-  { tableName :: String
-  }
-  deriving (Show, Generic)
+-- data TableEmployees = TableEmployees
+--   { tableName :: String
+--   }
+--   deriving (Show, Generic)
 
-instance FromJSON TableEmployees
+-- instance FromJSON TableEmployees
 
 data ParsedStatement
   = ParsedStatement
@@ -71,9 +73,9 @@ getTime = liftF $ GetTime id
 
 executeSql :: String -> Execution (Either ErrorMessage DataFrame)
 executeSql sql
-  | isNowStatement sql = do
-      currentTime <- getTime
-      return $ Right (createNowDataFrame currentTime)
+  -- /| isNowStatement sql = do
+  -- currentTime <- getTime
+  -- return $ Right (createNowDataFrame currentTime)
   | otherwise = do
       case parseSelect sql of
         Right tableName -> do
@@ -101,22 +103,43 @@ executeSql sql
             Left errorMessage -> return $ Left errorMessage
         Left errorMessage -> return $ Left errorMessage
 
-getTableNameFromFile :: FilePath -> IO (Either String TableEmployees)
-getTableNameFromFile fileName = do
-  let filePath = "src/db/" ++ fileName ++ ".yaml"
-  content <- BS.readFile filePath
-  return $ maybeToEither "Failed to decode YAML content" (Y.decode content)
+tableEmployees :: DataFrame
+tableEmployees =
+  DataFrame
+    [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType]
+    [ [IntegerValue 1, StringValue "Vi", StringValue "Po"],
+      [IntegerValue 2, StringValue "Ed", StringValue "Dl"]
+    ]
+
+tableWithNulls :: DataFrame
+tableWithNulls =
+  DataFrame
+    [Column "flag" StringType, Column "value" BoolType]
+    [ [StringValue "a", BoolValue True],
+      [StringValue "b", BoolValue True],
+      [StringValue "b", NullValue],
+      [StringValue "b", BoolValue False]
+    ]
+
+output :: IO ()
+output = BS.writeFile "output.yaml" (encode tableWithNulls)
+
+-- getTableNameFromFile :: FilePath -> IO (Either String TableEmployees)
+-- getTableNameFromFile fileName = do
+--   let filePath = "src/db/" ++ fileName ++ ".yaml"
+--   content <- BS.readFile filePath
+--   return $ maybeToEither "Failed to decode YAML content" (Y.decode content)
 
 maybeToEither :: a -> Maybe b -> Either a b
 maybeToEither err = maybe (Left err) Right
 
-createNowDataFrame :: UTCTime -> DataFrame
-createNowDataFrame currentTime =
-  let timeZoneOffset = 2
-      adjustedTime = addUTCTime (fromIntegral $ timeZoneOffset * 3600) currentTime
-      nowColumn = Column "Now" (TimestampType utc)
-      nowRow = [TimestampValue adjustedTime]
-   in DataFrame [nowColumn] [nowRow]
+-- createNowDataFrame :: UTCTime -> DataFrame
+-- createNowDataFrame currentTime =
+--   let timeZoneOffset = 2
+--       adjustedTime = addUTCTime (fromIntegral $ timeZoneOffset * 3600) currentTime
+--       nowColumn = Column "Now" (TimestampType utc)
+--       nowRow = [TimestampValue adjustedTime]
+--    in DataFrame [nowColumn] [nowRow]
 
 isNowStatement :: String -> Bool
 isNowStatement stmt = map toLower stmt == "now()"
