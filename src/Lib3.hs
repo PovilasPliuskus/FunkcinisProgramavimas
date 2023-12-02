@@ -72,6 +72,14 @@ executeSql sql
   | isNowStatement sql = do
       currentTime <- getTime
       return $ Right (createNowDataFrame currentTime)
+  | containsInsert sql = do
+      case insertParser sql of
+        Right (Insert tableName columns values) -> do
+          case readDataFrameFromJSON tableName of
+            Right dataFrame -> do
+              return $ Right dataFrame
+            Left errorMessage -> return $ Left errorMessage
+        Left errorMessage -> return $ Left errorMessage
   | otherwise = do
       case parseSelect sql of
         Right tableName -> do
