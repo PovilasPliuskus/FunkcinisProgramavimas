@@ -48,6 +48,7 @@ type ColumnName = String
 data ParsedStatement
   = ParsedStatement
   | Select [ColumnName] [TableName] ContainsWhere Condition
+  | Insert
   deriving (Show, Eq)
 
 data ExecutionAlgebra next
@@ -95,6 +96,19 @@ executeSql sql
                 Left errorMessage -> return $ Left errorMessage
             Left errorMessage -> return $ Left errorMessage
         Left errorMessage -> return $ Left errorMessage
+
+containsInsert :: String -> Bool
+containsInsert input = case words (map toLower input) of
+  ("insert" : _) -> True
+  _ -> False
+
+containsInto :: String -> Bool
+containsInto input = case words (map toLower input) of
+  ("into" : _) -> True
+  _ -> False
+
+dropWord :: String -> String
+dropWord = unwords . drop 1 . words
 
 -- tableEmployees :: DataFrame
 -- tableEmployees =
@@ -331,3 +345,13 @@ helperFunction sql = do
             Left errorMessage -> Left errorMessage
         Left errorMessage -> Left errorMessage
     Left errorMessage -> Left errorMessage
+
+insertParseHelper :: String -> Either ErrorMessage String
+insertParseHelper sql =
+  case containsInsert sql of
+    True -> do
+      let sqlWithoutInsert = dropWord sql
+      case containsInto sqlWithoutInsert of
+        True -> Right (dropWord sqlWithoutInsert)
+        False -> Left "Error: SQL statement does not contain 'into'"
+    False -> Left "Error: SQL statement does not contain 'insert'"
