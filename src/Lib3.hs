@@ -123,6 +123,28 @@ dropChar (_ : xs) = xs
 dropWord :: String -> String
 dropWord = unwords . drop 1 . words
 
+getSubstringBeforeLastClosingParen :: String -> Either ErrorMessage String
+getSubstringBeforeLastClosingParen s =
+  case reverse s of
+    [] -> Left "Error: Empty string"
+    (c : rest) ->
+      if c == ')'
+        then Right $ reverse $ go (reverse rest) ""
+        else Left "Error: No closing parenthesis found"
+  where
+    go :: String -> String -> String
+    go [] acc = acc
+    go (')' : rest) acc = rest
+    go (c : rest) acc = go rest (c : acc)
+
+getSubstringAfterLastClosingParen :: String -> String
+getSubstringAfterLastClosingParen s = reverse $ go (reverse s) ""
+  where
+    go :: String -> String -> String
+    go [] acc = acc
+    go (')' : rest) acc = acc
+    go (c : rest) acc = go rest (c : acc)
+
 -- tableEmployees :: DataFrame
 -- tableEmployees =
 --   DataFrame
