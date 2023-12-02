@@ -1,0 +1,1 @@
+[[["flag","StringType"],["value","BoolType"]],[[{"contents":"a","tag":"StringValue"},{"contents":true,"tag":"BoolValue"}],[{"contents":"b","tag":"StringValue"},{"contents":true,"tag":"BoolValue"}],[{"contents":"b","tag":"StringValue"},{"tag":"NullValue"}],[{"contents":"b","tag":"StringValue"},{"contents":false,"tag":"BoolValue"}]]]

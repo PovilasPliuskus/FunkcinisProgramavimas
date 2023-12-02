@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 module Lib3
   ( executeSql,
@@ -7,22 +8,29 @@ module Lib3
   )
 where
 
+import Control.Exception (IOException, try)
 import Control.Monad (foldM)
 import Control.Monad.Free (Free (..), liftF)
 import Control.Monad.IO.Class (MonadIO, liftIO)
+import Data.Aeson (FromJSON, eitherDecode, encode)
+import Data.ByteString.Char8 qualified as BS
+import Data.ByteString.Lazy.Char8 qualified as BLC
 import Data.Char (isSpace, toLower, toUpper)
 import Data.List
 import Data.List (isInfixOf, isPrefixOf, stripPrefix, tails)
 import Data.Maybe
 import Data.Ord (comparing)
+import Data.Text qualified as T
 import Data.Time (TimeZone (..), UTCTime (..), getCurrentTime, utc)
 import Data.Time.Clock (UTCTime, addUTCTime, nominalDiffTimeToSeconds)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
+import Data.Yaml (FromJSON, ToJSON)
+import Data.Yaml qualified as Y
 import DataFrame (Column (..), ColumnType (..), DataFrame (..), Row (..), Value (..))
+import GHC.Generics
 import GHC.RTS.Flags (DebugFlags (stm))
 import InMemoryTables (TableName, database)
-
--- type TableName = String
+import System.IO.Unsafe (unsafePerformIO)
 
 type Condition = String
 
@@ -57,9 +65,9 @@ getTime = liftF $ GetTime id
 
 executeSql :: String -> Execution (Either ErrorMessage DataFrame)
 executeSql sql
-  | isNowStatement sql = do
-      currentTime <- getTime
-      return $ Right (createNowDataFrame currentTime)
+  -- /| isNowStatement sql = do
+  -- currentTime <- getTime
+  -- return $ Right (createNowDataFrame currentTime)
   | otherwise = do
       case parseSelect sql of
         Right tableName -> do
@@ -74,26 +82,72 @@ executeSql sql
                     True -> do
                       let condition = removeTrailingSemicolon (removeBeforeWhere sqlAfterFrom)
                       let (column, value) = extractConditionParts condition
-                      case createDataFrame (Select columns tableNames hasWhere condition) of
+                      case createDataFrameFromFiles (Select columns tableNames hasWhere condition) of
                         Right dataFrame -> do
                           let filteredTable = filterTable column value dataFrame
                           return $ Right filteredTable
                         Left errorMessage -> return $ Left errorMessage
                     False ->
-                      case createDataFrame (Select columns tableNames hasWhere "") of
+                      case createDataFrameFromFiles (Select columns tableNames hasWhere "") of
                         Right dataFrame -> return $ Right dataFrame
                         Left errorMessage -> return $ Left errorMessage
                 Left errorMessage -> return $ Left errorMessage
             Left errorMessage -> return $ Left errorMessage
         Left errorMessage -> return $ Left errorMessage
 
-createNowDataFrame :: UTCTime -> DataFrame
-createNowDataFrame currentTime =
-  let timeZoneOffset = 2
-      adjustedTime = addUTCTime (fromIntegral $ timeZoneOffset * 3600) currentTime
-      nowColumn = Column "Now" (TimestampType utc)
-      nowRow = [TimestampValue adjustedTime]
-   in DataFrame [nowColumn] [nowRow]
+-- tableEmployees :: DataFrame
+-- tableEmployees =
+--   DataFrame
+--     [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType]
+--     [ [IntegerValue 1, StringValue "Vi", StringValue "Po"],
+--       [IntegerValue 2, StringValue "Ed", StringValue "Dl"]
+--     ]
+
+-- tableWithNulls :: DataFrame
+-- tableWithNulls =
+--   DataFrame
+--     [Column "flag" StringType, Column "value" BoolType]
+--     [ [StringValue "a", BoolValue True],
+--       [StringValue "b", BoolValue True],
+--       [StringValue "b", NullValue],
+--       [StringValue "b", BoolValue False]
+--     ]
+
+-- output :: IO ()
+-- output = BLC.writeFile "output.json" (encode tableEmployees)
+
+readDataFrameFromJSON :: FilePath -> Either String DataFrame
+readDataFrameFromJSON filePath =
+  unsafePerformIO $ do
+    let fullPath = "src/db/" ++ filePath ++ ".json"
+    content <- BLC.readFile fullPath
+    return $ eitherDecode content
+
+-- readDataFrameFromJSONPure :: FilePath -> Either String DataFrame
+-- readDataFrameFromJSONPure filePath = do
+--   let fullPath = "src/db/" ++ filePath ++ ".json"
+--   content <- BS.readFile fullPath
+--   let lazyContent = BLC.fromStrict content
+--   eitherDecode lazyContent
+
+-- printDataFrameFromJSON :: FilePath -> IO ()
+-- printDataFrameFromJSON fileName = do
+--   let filePath = "src/db/" ++ fileName ++ ".json"
+--   eitherDataFrame <- readDataFrameFromJSON filePath
+--   case eitherDataFrame of
+--     Left err -> putStrLn $ "Error decoding JSON from file " ++ filePath ++ ": " ++ err
+--     Right df -> print df
+
+maybeToEither :: a -> Maybe b -> Either a b
+maybeToEither err = maybe (Left err) Right
+
+-- createNowDataFrame :: UTCTime -> DataFrame
+-- createNowDataFrame currentTime =
+--   let timeZoneOffset = 2
+--       adjustedTime = addUTCTime (fromIntegral $ timeZoneOffset * 3600) currentTime
+--       nowColumn = Column "Now" (TimestampType utc)
+--       nowRow = [TimestampValue adjustedTime]
+--    in DataFrame [nowColumn] [nowRow]
 
 isNowStatement :: String -> Bool
 isNowStatement stmt = map toLower stmt == "now()"
@@ -123,7 +177,7 @@ filterTable column value table =
 columns :: DataFrame -> [Column]
 columns (DataFrame cols _) = cols
 
-dataRows :: DataFrame -> [[Value]]
+dataRows :: DataFrame -> [[DataFrame.Value]]
 dataRows (DataFrame _ rows) = rows
 
 getColumnIndex :: DataFrame -> String -> Maybe Int
@@ -207,9 +261,16 @@ extractTableNames sql =
         where
           (w, s'') = break p s'
 
-createDataFrame :: ParsedStatement -> Either ErrorMessage DataFrame
-createDataFrame (Select columns tableNames whereBool con) = do
-  dataFrames <- mapM (\tableName -> findTableByName InMemoryTables.database tableName) tableNames
+-- createDataFrame :: ParsedStatement -> Either ErrorMessage DataFrame
+-- createDataFrame (Select columns tableNames whereBool con) = do
+--   dataFrames <- mapM (\tableName -> findTableByName InMemoryTables.database tableName) tableNames
+--   combinedDataFrame <- combineDataFrames dataFrames
+--   result <- selectColumns combinedDataFrame columns
+--   return result
+
+createDataFrameFromFiles :: ParsedStatement -> Either ErrorMessage DataFrame
+createDataFrameFromFiles (Select columns tableNames whereBool con) = do
+  dataFrames <- mapM (\tableName -> readDataFrameFromJSON tableName) tableNames
   combinedDataFrame <- combineDataFrames dataFrames
   result <- selectColumns combinedDataFrame columns
   return result
