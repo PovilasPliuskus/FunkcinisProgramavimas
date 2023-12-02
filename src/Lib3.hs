@@ -21,9 +21,10 @@ import Data.List (isInfixOf, isPrefixOf, stripPrefix, tails)
 import Data.Maybe
 import Data.Ord (comparing)
 import Data.Text qualified as T
-import Data.Time (TimeZone (..), UTCTime (..), getCurrentTime, utc)
+import Data.Time (TimeZone (..), UTCTime (..), defaultTimeLocale, getCurrentTime, utc)
 import Data.Time.Clock (UTCTime, addUTCTime, nominalDiffTimeToSeconds)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
+import Data.Time.Format (formatTime)
 import Data.Yaml (FromJSON, ToJSON)
 import Data.Yaml qualified as Y
 import DataFrame (Column (..), ColumnType (..), DataFrame (..), Row (..), Value (..))
@@ -65,9 +66,9 @@ getTime = liftF $ GetTime id
 
 executeSql :: String -> Execution (Either ErrorMessage DataFrame)
 executeSql sql
-  -- /| isNowStatement sql = do
-  -- currentTime <- getTime
-  -- return $ Right (createNowDataFrame currentTime)
+  | isNowStatement sql = do
+      currentTime <- getTime
+      return $ Right (createNowDataFrame currentTime)
   | otherwise = do
       case parseSelect sql of
         Right tableName -> do
@@ -141,13 +142,13 @@ readDataFrameFromJSON filePath =
 maybeToEither :: a -> Maybe b -> Either a b
 maybeToEither err = maybe (Left err) Right
 
--- createNowDataFrame :: UTCTime -> DataFrame
--- createNowDataFrame currentTime =
---   let timeZoneOffset = 2
---       adjustedTime = addUTCTime (fromIntegral $ timeZoneOffset * 3600) currentTime
---       nowColumn = Column "Now" (TimestampType utc)
---       nowRow = [TimestampValue adjustedTime]
---    in DataFrame [nowColumn] [nowRow]
+createNowDataFrame :: UTCTime -> DataFrame
+createNowDataFrame currentTime =
+  let timeZoneOffset = 2
+      adjustedTime = addUTCTime (fromIntegral $ timeZoneOffset * 3600) currentTime
+      column = Column "Now" StringType
+      row = [StringValue (formatTime defaultTimeLocale "%Y-%m-%d %H:%M:%S" adjustedTime)]
+   in DataFrame [column] [row]
 
 isNowStatement :: String -> Bool
 isNowStatement stmt = map toLower stmt == "now()"
