@@ -48,7 +48,7 @@ type ColumnName = String
 data ParsedStatement
   = ParsedStatement
   | Select [ColumnName] [TableName] ContainsWhere Condition
-  | Insert
+  | Insert TableName
   deriving (Show, Eq)
 
 data ExecutionAlgebra next
@@ -112,6 +112,13 @@ extractTableName str =
   case words str of
     [] -> Left "Error: Please enter a table name"
     (tableName : _) -> Right tableName
+
+containsOpeningBracket :: String -> Bool
+containsOpeningBracket input = not (null input) && head input == '('
+
+dropChar :: String -> String
+dropChar [] = []
+dropChar (_ : xs) = xs
 
 dropWord :: String -> String
 dropWord = unwords . drop 1 . words
@@ -352,14 +359,23 @@ helperFunction sql = do
         Left errorMessage -> Left errorMessage
     Left errorMessage -> Left errorMessage
 
-insertParseHelper :: String -> Either ErrorMessage String
+insertParseHelper :: String -> Either ErrorMessage (String, String)
 insertParseHelper sql =
   case containsInsert sql of
-    True ->
-      case containsInto (dropWord sql) of
-        True ->
-          case extractTableName (dropWord (dropWord sql)) of
-            Right tableName -> Right tableName
+    True -> do
+      let sqlWithoutInsert = dropWord sql
+      case containsInto sqlWithoutInsert of
+        True -> do
+          let sqlWithoutInto = dropWord sqlWithoutInsert
+          case extractTableName sqlWithoutInto of
+            Right tableName -> do
+              let parsedStatement = Insert tableName
+              let sqlWithoutTableName = dropWord sqlWithoutInto
+              case containsOpeningBracket sqlWithoutTableName of
+                True -> do
+                  let sqlWithoutOB = dropChar sqlWithoutTableName
+                  Right (show parsedStatement, sqlWithoutOB)
+                False -> Left "Error: Missing opening brace"
             Left errorMessage -> Left errorMessage
         False -> Left "Error: SQL statement does not contain 'into'"
     False -> Left "Error: SQL statement does not contain 'insert'"
