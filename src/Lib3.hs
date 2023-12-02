@@ -130,11 +130,11 @@ getSubstringBeforeLastClosingParen s =
     _ -> Left "Error: No closing parenthesis found"
 
 getSubstringAfterLastClosingParen :: String -> String
-getSubstringAfterLastClosingParen s = reverse $ go (reverse s) ""
+getSubstringAfterLastClosingParen s = go s ""
   where
     go :: String -> String -> String
     go [] acc = acc
-    go (')' : rest) acc = acc
+    go (')' : rest) acc = rest
     go (c : rest) acc = go rest (c : acc)
 
 extractColumnNamesUntilClosingParenthesis :: String -> Either ErrorMessage [ColumnName]
@@ -395,7 +395,8 @@ insertParseHelper sql =
                   case extractColumnNamesUntilClosingParenthesis sqlWithoutOB of
                     Right columns -> do
                       let parsedStatement = Insert tableName columns
-                      Right (show parsedStatement, sqlWithoutOB)
+                      let sqlWithoutColumnNames = getSubstringAfterLastClosingParen sqlWithoutOB
+                      Right (show parsedStatement, sqlWithoutColumnNames)
                     Left errorMessage -> Left errorMessage
                 False -> Left "Error: Missing opening brace"
             Left errorMessage -> Left errorMessage
