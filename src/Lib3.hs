@@ -30,6 +30,7 @@ import DataFrame (Column (..), ColumnType (..), DataFrame (..), Row (..), Value 
 import GHC.Generics
 import GHC.RTS.Flags (DebugFlags (stm))
 import InMemoryTables (TableName, database)
+import System.IO.Unsafe (unsafePerformIO)
 
 type Condition = String
 
@@ -81,13 +82,13 @@ executeSql sql
                     True -> do
                       let condition = removeTrailingSemicolon (removeBeforeWhere sqlAfterFrom)
                       let (column, value) = extractConditionParts condition
-                      case createDataFrame (Select columns tableNames hasWhere condition) of
+                      case createDataFrameFromFiles (Select columns tableNames hasWhere condition) of
                         Right dataFrame -> do
                           let filteredTable = filterTable column value dataFrame
                           return $ Right filteredTable
                         Left errorMessage -> return $ Left errorMessage
                     False ->
-                      case createDataFrame (Select columns tableNames hasWhere "") of
+                      case createDataFrameFromFiles (Select columns tableNames hasWhere "") of
                         Right dataFrame -> return $ Right dataFrame
                         Left errorMessage -> return $ Left errorMessage
                 Left errorMessage -> return $ Left errorMessage
@@ -115,21 +116,27 @@ executeSql sql
 -- output :: IO ()
 -- output = BLC.writeFile "output.json" (encode tableEmployees)
 
-readDataFrameFromJSON :: FilePath -> IO (Either String DataFrame)
-readDataFrameFromJSON filePath = do
-  content <- BS.readFile filePath
-  let lazyContent = BLC.fromStrict content
-  case eitherDecode lazyContent of
-    Left err -> return $ Left ("Error decoding YAML from file " ++ filePath ++ ": " ++ err)
-    Right df -> return $ Right df
+readDataFrameFromJSON :: FilePath -> Either String DataFrame
+readDataFrameFromJSON filePath =
+  unsafePerformIO $ do
+    let fullPath = "src/db/" ++ filePath ++ ".json"
+    content <- BLC.readFile fullPath
+    return $ eitherDecode content
 
-printDataFrameFromJSON :: FilePath -> IO ()
-printDataFrameFromJSON fileName = do
-  let filePath = "src/db/" ++ fileName ++ ".json"
-  eitherDataFrame <- readDataFrameFromJSON filePath
-  case eitherDataFrame of
-    Left err -> putStrLn $ "Error decoding JSON from file " ++ filePath ++ ": " ++ err
-    Right df -> print df
+-- readDataFrameFromJSONPure :: FilePath -> Either String DataFrame
+-- readDataFrameFromJSONPure filePath = do
+--   let fullPath = "src/db/" ++ filePath ++ ".json"
+--   content <- BS.readFile fullPath
+--   let lazyContent = BLC.fromStrict content
+--   eitherDecode lazyContent
+
+-- printDataFrameFromJSON :: FilePath -> IO ()
+-- printDataFrameFromJSON fileName = do
+--   let filePath = "src/db/" ++ fileName ++ ".json"
+--   eitherDataFrame <- readDataFrameFromJSON filePath
+--   case eitherDataFrame of
+--     Left err -> putStrLn $ "Error decoding JSON from file " ++ filePath ++ ": " ++ err
+--     Right df -> print df
 
 maybeToEither :: a -> Maybe b -> Either a b
 maybeToEither err = maybe (Left err) Right
@@ -254,9 +261,16 @@ extractTableNames sql =
         where
           (w, s'') = break p s'
 
-createDataFrame :: ParsedStatement -> Either ErrorMessage DataFrame
-createDataFrame (Select columns tableNames whereBool con) = do
-  dataFrames <- mapM (\tableName -> findTableByName InMemoryTables.database tableName) tableNames
+-- createDataFrame :: ParsedStatement -> Either ErrorMessage DataFrame
+-- createDataFrame (Select columns tableNames whereBool con) = do
+--   dataFrames <- mapM (\tableName -> findTableByName InMemoryTables.database tableName) tableNames
+--   combinedDataFrame <- combineDataFrames dataFrames
+--   result <- selectColumns combinedDataFrame columns
+--   return result
+
+createDataFrameFromFiles :: ParsedStatement -> Either ErrorMessage DataFrame
+createDataFrameFromFiles (Select columns tableNames whereBool con) = do
+  dataFrames <- mapM (\tableName -> readDataFrameFromJSON tableName) tableNames
   combinedDataFrame <- combineDataFrames dataFrames
   result <- selectColumns combinedDataFrame columns
   return result
