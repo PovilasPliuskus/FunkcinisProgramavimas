@@ -48,7 +48,7 @@ type ColumnName = String
 data ParsedStatement
   = ParsedStatement
   | Select [ColumnName] [TableName] ContainsWhere Condition
-  | Insert TableName
+  | Insert TableName [ColumnName]
   deriving (Show, Eq)
 
 data ExecutionAlgebra next
@@ -125,17 +125,9 @@ dropWord = unwords . drop 1 . words
 
 getSubstringBeforeLastClosingParen :: String -> Either ErrorMessage String
 getSubstringBeforeLastClosingParen s =
-  case reverse s of
-    [] -> Left "Error: Empty string"
-    (c : rest) ->
-      if c == ')'
-        then Right $ reverse $ go (reverse rest) ""
-        else Left "Error: No closing parenthesis found"
-  where
-    go :: String -> String -> String
-    go [] acc = acc
-    go (')' : rest) acc = rest
-    go (c : rest) acc = go rest (c : acc)
+  case break (== ')') s of
+    (before, ')' : after) -> Right (before ++ " from")
+    _ -> Left "Error: No closing parenthesis found"
 
 getSubstringAfterLastClosingParen :: String -> String
 getSubstringAfterLastClosingParen s = reverse $ go (reverse s) ""
@@ -144,6 +136,11 @@ getSubstringAfterLastClosingParen s = reverse $ go (reverse s) ""
     go [] acc = acc
     go (')' : rest) acc = acc
     go (c : rest) acc = go rest (c : acc)
+
+extractColumnNamesUntilClosingParenthesis :: String -> Either ErrorMessage [ColumnName]
+extractColumnNamesUntilClosingParenthesis sql = do
+  substring <- getSubstringBeforeLastClosingParen sql
+  extractColumns substring
 
 -- tableEmployees :: DataFrame
 -- tableEmployees =
@@ -391,12 +388,15 @@ insertParseHelper sql =
           let sqlWithoutInto = dropWord sqlWithoutInsert
           case extractTableName sqlWithoutInto of
             Right tableName -> do
-              let parsedStatement = Insert tableName
               let sqlWithoutTableName = dropWord sqlWithoutInto
               case containsOpeningBracket sqlWithoutTableName of
                 True -> do
                   let sqlWithoutOB = dropChar sqlWithoutTableName
-                  Right (show parsedStatement, sqlWithoutOB)
+                  case extractColumnNamesUntilClosingParenthesis sqlWithoutOB of
+                    Right columns -> do
+                      let parsedStatement = Insert tableName columns
+                      Right (show parsedStatement, sqlWithoutOB)
+                    Left errorMessage -> Left errorMessage
                 False -> Left "Error: Missing opening brace"
             Left errorMessage -> Left errorMessage
         False -> Left "Error: SQL statement does not contain 'into'"
