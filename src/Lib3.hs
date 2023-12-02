@@ -385,8 +385,8 @@ helperFunction sql = do
         Left errorMessage -> Left errorMessage
     Left errorMessage -> Left errorMessage
 
-insertParseHelper :: String -> Either ErrorMessage (String, String)
-insertParseHelper sql =
+insertParser :: String -> Either ErrorMessage ParsedStatement
+insertParser sql =
   case containsInsert sql of
     True -> do
       let sqlWithoutInsert = dropWord sql
@@ -412,7 +412,7 @@ insertParseHelper sql =
                               case extractColumnNamesUntilClosingParenthesis sqlWithoutSecondOB of
                                 Right values -> do
                                   let parsedStatement = Insert tableName columns values
-                                  Right (show parsedStatement, sqlWithoutSecondOB)
+                                  Right parsedStatement
                                 Left errorMessage -> Left errorMessage
                             False -> Left "Error: Missing opening brace"
                         False -> Left "Error: SQL statement does not contain 'values'"
