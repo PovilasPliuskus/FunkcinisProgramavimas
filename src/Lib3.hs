@@ -45,6 +45,8 @@ type Database = [(TableName, DataFrame)]
 
 type ColumnName = String
 
+type InsertValues = String
+
 data ParsedStatement
   = ParsedStatement
   | Select [ColumnName] [TableName] ContainsWhere Condition
@@ -404,7 +406,11 @@ insertParseHelper sql =
                       case containsValues sqlWithoutColumnNames of
                         True -> do
                           let sqlWithoutValues = dropWord sqlWithoutColumnNames
-                          Right (show parsedStatement, sqlWithoutValues)
+                          case containsOpeningBracket sqlWithoutValues of
+                            True -> do
+                              let sqlWithoutSecondOB = dropChar sqlWithoutValues
+                              Right (show parsedStatement, sqlWithoutSecondOB)
+                            False -> Left "Error: Missing opening brace"
                         False -> Left "Error: SQL statement does not contain 'values'"
                     Left errorMessage -> Left errorMessage
                 False -> Left "Error: Missing opening brace"
