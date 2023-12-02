@@ -3,8 +3,9 @@
 
 module DataFrame (Column (..), ColumnType (..), Value (..), Row, DataFrame (..)) where
 
+-- import Data.Yaml (FromJSON, ToJSON, encode)
+import Data.Aeson (FromJSON, ToJSON)
 import Data.Time (TimeZone, UTCTime)
-import Data.Yaml (FromJSON, ToJSON, encode)
 import GHC.Generics (Generic)
 
 data ColumnType

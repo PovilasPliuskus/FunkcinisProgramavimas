@@ -12,7 +12,7 @@ import Control.Exception (IOException, try)
 import Control.Monad (foldM)
 import Control.Monad.Free (Free (..), liftF)
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Data.Aeson (FromJSON)
+import Data.Aeson (FromJSON, eitherDecode, encode)
 import Data.ByteString.Char8 qualified as BS
 import Data.ByteString.Lazy.Char8 qualified as BLC
 import Data.Char (isSpace, toLower, toUpper)
@@ -24,7 +24,7 @@ import Data.Text qualified as T
 import Data.Time (TimeZone (..), UTCTime (..), getCurrentTime, utc)
 import Data.Time.Clock (UTCTime, addUTCTime, nominalDiffTimeToSeconds)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
-import Data.Yaml (FromJSON, ToJSON, encode)
+import Data.Yaml (FromJSON, ToJSON)
 import Data.Yaml qualified as Y
 import DataFrame (Column (..), ColumnType (..), DataFrame (..), Row (..), Value (..))
 import GHC.Generics
@@ -122,7 +122,23 @@ tableWithNulls =
     ]
 
 output :: IO ()
-output = BS.writeFile "output.yaml" (encode tableWithNulls)
+output = BLC.writeFile "output.json" (encode tableEmployees)
+
+readDataFrameFromYAML :: FilePath -> IO (Either String DataFrame)
+readDataFrameFromYAML filePath = do
+  content <- BS.readFile filePath
+  let lazyContent = BLC.fromStrict content
+  case eitherDecode lazyContent of
+    Left err -> return $ Left ("Error decoding YAML from file " ++ filePath ++ ": " ++ err)
+    Right df -> return $ Right df
+
+printDataFrameFromYAML :: FilePath -> IO ()
+printDataFrameFromYAML fileName = do
+  let filePath = "src/db/" ++ fileName ++ ".yaml"
+  eitherDataFrame <- readDataFrameFromYAML filePath
+  case eitherDataFrame of
+    Left err -> putStrLn $ "Error decoding YAML from file " ++ filePath ++ ": " ++ err
+    Right df -> print df
 
 -- getTableNameFromFile :: FilePath -> IO (Either String TableEmployees)
 -- getTableNameFromFile fileName = do
