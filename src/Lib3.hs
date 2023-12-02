@@ -31,8 +31,6 @@ import GHC.Generics
 import GHC.RTS.Flags (DebugFlags (stm))
 import InMemoryTables (TableName, database)
 
--- type TableName = String
-
 type Condition = String
 
 type ContainsWhere = Bool
@@ -44,13 +42,6 @@ type ErrorMessage = String
 type Database = [(TableName, DataFrame)]
 
 type ColumnName = String
-
--- data TableEmployees = TableEmployees
---   { tableName :: String
---   }
---   deriving (Show, Generic)
-
--- instance FromJSON TableEmployees
 
 data ParsedStatement
   = ParsedStatement
@@ -103,48 +94,42 @@ executeSql sql
             Left errorMessage -> return $ Left errorMessage
         Left errorMessage -> return $ Left errorMessage
 
-tableEmployees :: DataFrame
-tableEmployees =
-  DataFrame
-    [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType]
-    [ [IntegerValue 1, StringValue "Vi", StringValue "Po"],
-      [IntegerValue 2, StringValue "Ed", StringValue "Dl"]
-    ]
+-- tableEmployees :: DataFrame
+-- tableEmployees =
+--   DataFrame
+--     [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType]
+--     [ [IntegerValue 1, StringValue "Vi", StringValue "Po"],
+--       [IntegerValue 2, StringValue "Ed", StringValue "Dl"]
+--     ]
 
-tableWithNulls :: DataFrame
-tableWithNulls =
-  DataFrame
-    [Column "flag" StringType, Column "value" BoolType]
-    [ [StringValue "a", BoolValue True],
-      [StringValue "b", BoolValue True],
-      [StringValue "b", NullValue],
-      [StringValue "b", BoolValue False]
-    ]
+-- tableWithNulls :: DataFrame
+-- tableWithNulls =
+--   DataFrame
+--     [Column "flag" StringType, Column "value" BoolType]
+--     [ [StringValue "a", BoolValue True],
+--       [StringValue "b", BoolValue True],
+--       [StringValue "b", NullValue],
+--       [StringValue "b", BoolValue False]
+--     ]
 
-output :: IO ()
-output = BLC.writeFile "output.json" (encode tableEmployees)
+-- output :: IO ()
+-- output = BLC.writeFile "output.json" (encode tableEmployees)
 
-readDataFrameFromYAML :: FilePath -> IO (Either String DataFrame)
-readDataFrameFromYAML filePath = do
+readDataFrameFromJSON :: FilePath -> IO (Either String DataFrame)
+readDataFrameFromJSON filePath = do
   content <- BS.readFile filePath
   let lazyContent = BLC.fromStrict content
   case eitherDecode lazyContent of
     Left err -> return $ Left ("Error decoding YAML from file " ++ filePath ++ ": " ++ err)
     Right df -> return $ Right df
 
-printDataFrameFromYAML :: FilePath -> IO ()
-printDataFrameFromYAML fileName = do
-  let filePath = "src/db/" ++ fileName ++ ".yaml"
-  eitherDataFrame <- readDataFrameFromYAML filePath
+printDataFrameFromJSON :: FilePath -> IO ()
+printDataFrameFromJSON fileName = do
+  let filePath = "src/db/" ++ fileName ++ ".json"
+  eitherDataFrame <- readDataFrameFromJSON filePath
   case eitherDataFrame of
-    Left err -> putStrLn $ "Error decoding YAML from file " ++ filePath ++ ": " ++ err
+    Left err -> putStrLn $ "Error decoding JSON from file " ++ filePath ++ ": " ++ err
     Right df -> print df
-
--- getTableNameFromFile :: FilePath -> IO (Either String TableEmployees)
--- getTableNameFromFile fileName = do
---   let filePath = "src/db/" ++ fileName ++ ".yaml"
---   content <- BS.readFile filePath
---   return $ maybeToEither "Failed to decode YAML content" (Y.decode content)
 
 maybeToEither :: a -> Maybe b -> Either a b
 maybeToEither err = maybe (Left err) Right
