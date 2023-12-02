@@ -107,6 +107,11 @@ containsInto input = case words (map toLower input) of
   ("into" : _) -> True
   _ -> False
 
+containsValues :: String -> Bool
+containsValues input = case words (map toLower input) of
+  ("values" : _) -> True
+  _ -> False
+
 extractTableName :: String -> Either ErrorMessage TableName
 extractTableName str =
   case words str of
@@ -396,7 +401,11 @@ insertParseHelper sql =
                     Right columns -> do
                       let parsedStatement = Insert tableName columns
                       let sqlWithoutColumnNames = getSubstringAfterLastClosingParen sqlWithoutOB
-                      Right (show parsedStatement, sqlWithoutColumnNames)
+                      case containsValues sqlWithoutColumnNames of
+                        True -> do
+                          let sqlWithoutValues = dropWord sqlWithoutColumnNames
+                          Right (show parsedStatement, sqlWithoutValues)
+                        False -> Left "Error: SQL statement does not contain 'values'"
                     Left errorMessage -> Left errorMessage
                 False -> Left "Error: Missing opening brace"
             Left errorMessage -> Left errorMessage
