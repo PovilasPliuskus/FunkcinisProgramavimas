@@ -107,6 +107,12 @@ containsInto input = case words (map toLower input) of
   ("into" : _) -> True
   _ -> False
 
+extractTableName :: String -> Either ErrorMessage TableName
+extractTableName str =
+  case words str of
+    [] -> Left "Error: Please enter a table name"
+    (tableName : _) -> Right tableName
+
 dropWord :: String -> String
 dropWord = unwords . drop 1 . words
 
@@ -349,9 +355,11 @@ helperFunction sql = do
 insertParseHelper :: String -> Either ErrorMessage String
 insertParseHelper sql =
   case containsInsert sql of
-    True -> do
-      let sqlWithoutInsert = dropWord sql
-      case containsInto sqlWithoutInsert of
-        True -> Right (dropWord sqlWithoutInsert)
+    True ->
+      case containsInto (dropWord sql) of
+        True ->
+          case extractTableName (dropWord (dropWord sql)) of
+            Right tableName -> Right tableName
+            Left errorMessage -> Left errorMessage
         False -> Left "Error: SQL statement does not contain 'into'"
     False -> Left "Error: SQL statement does not contain 'insert'"
