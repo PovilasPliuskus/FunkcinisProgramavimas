@@ -50,7 +50,7 @@ type InsertValues = String
 data ParsedStatement
   = ParsedStatement
   | Select [ColumnName] [TableName] ContainsWhere Condition
-  | Insert TableName [ColumnName]
+  | Insert TableName [ColumnName] [InsertValues]
   deriving (Show, Eq)
 
 data ExecutionAlgebra next
@@ -401,7 +401,7 @@ insertParseHelper sql =
                   let sqlWithoutOB = dropChar sqlWithoutTableName
                   case extractColumnNamesUntilClosingParenthesis sqlWithoutOB of
                     Right columns -> do
-                      let parsedStatement = Insert tableName columns
+                      -- let parsedStatement = Insert tableName columns
                       let sqlWithoutColumnNames = getSubstringAfterLastClosingParen sqlWithoutOB
                       case containsValues sqlWithoutColumnNames of
                         True -> do
@@ -409,7 +409,11 @@ insertParseHelper sql =
                           case containsOpeningBracket sqlWithoutValues of
                             True -> do
                               let sqlWithoutSecondOB = dropChar sqlWithoutValues
-                              Right (show parsedStatement, sqlWithoutSecondOB)
+                              case extractColumnNamesUntilClosingParenthesis sqlWithoutSecondOB of
+                                Right values -> do
+                                  let parsedStatement = Insert tableName columns values
+                                  Right (show parsedStatement, sqlWithoutSecondOB)
+                                Left errorMessage -> Left errorMessage
                             False -> Left "Error: Missing opening brace"
                         False -> Left "Error: SQL statement does not contain 'values'"
                     Left errorMessage -> Left errorMessage
