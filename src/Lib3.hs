@@ -45,14 +45,19 @@ type Database = [(TableName, DataFrame)]
 
 type ColumnName = String
 
+type InsertValues = String
+
 data ParsedStatement
   = ParsedStatement
   | Select [ColumnName] [TableName] ContainsWhere Condition
+  | Insert TableName [ColumnName] [InsertValues]
+  | Update TableName [(ColumnName, InsertValues)] Condition
   deriving (Show, Eq)
 
 data ExecutionAlgebra next
   = LoadFile TableName (FileContent -> next)
   | GetTime (UTCTime -> next)
+  | UpdateTable TableName [(ColumnName, InsertValues)] Condition (Either ErrorMessage DataFrame -> next)
   -- feel free to add more constructors here
   deriving (Functor)
 
@@ -64,11 +69,15 @@ loadFile name = liftF $ LoadFile name id
 getTime :: Execution UTCTime
 getTime = liftF $ GetTime id
 
+updateTable :: TableName -> [(ColumnName, InsertValues)] -> Condition -> Execution (Either ErrorMessage DataFrame)
+updateTable tableName updates condition = liftF $ UpdateTable tableName updates condition id
+
 executeSql :: String -> Execution (Either ErrorMessage DataFrame)
 executeSql sql
   | isNowStatement sql = do
       currentTime <- getTime
       return $ Right (createNowDataFrame currentTime)
+  | containsUpdate sql = executeUpdate sql
   | otherwise = do
       case parseSelect sql of
         Right tableName -> do
@@ -95,6 +104,56 @@ executeSql sql
                 Left errorMessage -> return $ Left errorMessage
             Left errorMessage -> return $ Left errorMessage
         Left errorMessage -> return $ Left errorMessage
+
+containsInsert :: String -> Bool
+containsInsert input = case words (map toLower input) of
+  ("insert" : _) -> True
+  _ -> False
+
+containsInto :: String -> Bool
+containsInto input = case words (map toLower input) of
+  ("into" : _) -> True
+  _ -> False
+
+containsValues :: String -> Bool
+containsValues input = case words (map toLower input) of
+  ("values" : _) -> True
+  _ -> False
+
+extractTableName :: String -> Either ErrorMessage TableName
+extractTableName str =
+  case words str of
+    [] -> Left "Error: Please enter a table name"
+    (tableName : _) -> Right tableName
+
+containsOpeningBracket :: String -> Bool
+containsOpeningBracket input = not (null input) && head input == '('
+
+dropChar :: String -> String
+dropChar [] = []
+dropChar (_ : xs) = xs
+
+dropWord :: String -> String
+dropWord = unwords . drop 1 . words
+
+getSubstringBeforeLastClosingParen :: String -> Either ErrorMessage String
+getSubstringBeforeLastClosingParen s =
+  case break (== ')') s of
+    (before, ')' : after) -> Right (before ++ " from")
+    _ -> Left "Error: No closing parenthesis found"
+
+getSubstringAfterLastClosingParen :: String -> String
+getSubstringAfterLastClosingParen s = go s ""
+  where
+    go :: String -> String -> String
+    go [] acc = acc
+    go (')' : rest) acc = rest
+    go (c : rest) acc = go rest (c : acc)
+
+extractColumnNamesUntilClosingParenthesis :: String -> Either ErrorMessage [ColumnName]
+extractColumnNamesUntilClosingParenthesis sql = do
+  substring <- getSubstringBeforeLastClosingParen sql
+  extractColumns substring
 
 -- tableEmployees :: DataFrame
 -- tableEmployees =
@@ -331,3 +390,129 @@ helperFunction sql = do
             Left errorMessage -> Left errorMessage
         Left errorMessage -> Left errorMessage
     Left errorMessage -> Left errorMessage
+
+insertParser :: String -> Either ErrorMessage ParsedStatement
+insertParser sql =
+  case containsInsert sql of
+    True -> do
+      let sqlWithoutInsert = dropWord sql
+      case containsInto sqlWithoutInsert of
+        True -> do
+          let sqlWithoutInto = dropWord sqlWithoutInsert
+          case extractTableName sqlWithoutInto of
+            Right tableName -> do
+              let sqlWithoutTableName = dropWord sqlWithoutInto
+              case containsOpeningBracket sqlWithoutTableName of
+                True -> do
+                  let sqlWithoutOB = dropChar sqlWithoutTableName
+                  case extractColumnNamesUntilClosingParenthesis sqlWithoutOB of
+                    Right columns -> do
+                      -- let parsedStatement = Insert tableName columns
+                      let sqlWithoutColumnNames = getSubstringAfterLastClosingParen sqlWithoutOB
+                      case containsValues sqlWithoutColumnNames of
+                        True -> do
+                          let sqlWithoutValues = dropWord sqlWithoutColumnNames
+                          case containsOpeningBracket sqlWithoutValues of
+                            True -> do
+                              let sqlWithoutSecondOB = dropChar sqlWithoutValues
+                              case extractColumnNamesUntilClosingParenthesis sqlWithoutSecondOB of
+                                Right values -> do
+                                  let parsedStatement = Insert tableName columns values
+                                  Right parsedStatement
+                                Left errorMessage -> Left errorMessage
+                            False -> Left "Error: Missing opening brace"
+                        False -> Left "Error: SQL statement does not contain 'values'"
+                    Left errorMessage -> Left errorMessage
+                False -> Left "Error: Missing opening brace"
+            Left errorMessage -> Left errorMessage
+        False -> Left "Error: SQL statement does not contain 'into'"
+    False -> Left "Error: SQL statement does not contain 'insert'"
+
+
+executeUpdate :: String -> Execution (Either ErrorMessage DataFrame)
+executeUpdate sql = do
+  case insertParser sql of
+    Right (Update tableName updates condition) -> do
+      let hasWhere = not (null condition)
+      case createDataFrameFromFiles (Select [] [tableName] hasWhere condition) of
+        Right dataFrame -> do
+          let updatedDataFrame = updateDataFrame dataFrame updates
+          return $ Right updatedDataFrame
+        Left errorMessage -> return $ Left errorMessage
+    Left errorMessage -> return $ Left errorMessage
+
+-- Function to update values in a DataFrame based on the Update operation
+-- ...
+-- Function to update values in a DataFrame based on the Update operation
+updateDataFrame :: DataFrame -> [(ColumnName, InsertValues)] -> DataFrame
+updateDataFrame table updates =
+  let columnIndexMap = mapColumnIndex (columns table)
+      updatedRows = map (updateRow columnIndexMap table updates) (dataRows table)
+   in DataFrame (columns table) updatedRows
+
+-- Function to update a single row in a DataFrame
+updateRow :: [(String, Int)] -> DataFrame -> [(ColumnName, InsertValues)] -> Row -> Row
+updateRow columnIndexMap table updates row =
+  let updatedRow = foldl (\r (columnName, value) -> updateColumn r table columnName value) row updates
+   in updatedRow
+
+-- Function to update a single value in a row
+updateColumn :: Row -> DataFrame -> ColumnName -> InsertValues -> Row
+updateColumn row table columnName value =
+  let columnIndexMap = mapColumnIndex (columns table)  -- Compute columnIndexMap based on the columns of the table
+  in case lookup columnName columnIndexMap of
+    Just index -> case columns table !! index of
+      Column _ columnType -> case parseColumnType columnType value of
+        Just parsedValue -> take index row ++ [parsedValue] ++ drop (index + 1) row
+        Nothing -> row -- Failed to parse value, leave the row unchanged
+      _ -> row -- Invalid column type
+    Nothing -> row -- Column not found in the DataFrame
+
+parseColumnType :: ColumnType -> InsertValues -> Maybe Value
+parseColumnType IntegerType str = case reads str of
+  [(intValue, "")] -> Just $ IntegerValue intValue
+  _ -> Nothing
+parseColumnType StringType str = Just $ StringValue str
+parseColumnType BoolType str = case map toLower str of
+  "true" -> Just $ BoolValue True
+  "false" -> Just $ BoolValue False
+  _ -> Nothing
+-- Add cases for other column types as needed
+
+-- Helper function to check if the SQL statement contains an "UPDATE" keyword
+containsUpdate :: String -> Bool
+containsUpdate input = "update" `elem` words (map toLower input)
+
+
+-- Parse UPDATE statements
+updateParser :: String -> Either ErrorMessage ParsedStatement
+updateParser sql =
+  case containsUpdate sql of
+    True -> do
+      let sqlWithoutUpdate = dropWord sql
+      case extractTableName sqlWithoutUpdate of
+        Right tableName -> do
+          let sqlWithoutTableName = dropWord sqlWithoutUpdate
+          case "set" `elem` words (map toLower sqlWithoutTableName) of
+            True -> do
+              let sqlWithoutSet = dropWord sqlWithoutTableName
+              let (updates, rest) = break (== "where") (words sqlWithoutSet)
+              case updates of
+                [] -> Left "Error: No updates found in the SET clause"
+                _ -> do
+                  let parsedUpdates = parseUpdatePairs updates
+                  case rest of
+                    ("where" : condition) -> do
+                      let parsedCondition = unwords condition
+                      Right (Update tableName parsedUpdates parsedCondition)
+                    _ -> Left "Error: Missing WHERE clause in UPDATE statement"
+            False -> Left "Error: Missing SET clause in UPDATE statement"
+        Left errorMessage -> Left errorMessage
+    False -> Left "Error: SQL statement does not contain 'update'"
+
+-- Helper function to parse pairs of column and value in the SET clause
+parseUpdatePairs :: [String] -> [(ColumnName, InsertValues)]
+parseUpdatePairs [] = []
+parseUpdatePairs (column : "=" : value : rest) =
+  (map toLower column, value) : parseUpdatePairs rest
+parseUpdatePairs _ = error "Invalid format in the SET clause"
