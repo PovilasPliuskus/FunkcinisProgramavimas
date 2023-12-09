@@ -1,3 +1,5 @@
+-- main.hs
+
 module Main (main) where
 
 import Control.Monad.Free (Free (..))
@@ -41,7 +43,8 @@ completer n = do
           "values",
           "set",
           "update",
-          "delete"
+          "delete",
+          "load"
         ]
   return $ Prelude.filter (L.isPrefixOf n) names
 
@@ -49,21 +52,22 @@ completer n = do
 cmd :: String -> Repl ()
 cmd c = do
   s <- terminalWidth <$> liftIO size
-  result <- liftIO $ cmd' s
+  result <- liftIO $ cmd' s c
   case result of
     Left err -> liftIO $ putStrLn $ "Error: " ++ err
     Right table -> liftIO $ putStrLn table
   where
     terminalWidth :: (Integral n) => Maybe (Window n) -> n
     terminalWidth = maybe 80 width
-    cmd' :: Integer -> IO (Either String String)
-    cmd' s = do
-      df <- runExecuteIO $ Lib3.executeSql c
-      return $ Lib1.renderDataFrameAsTable s <$> df
-
-main :: IO ()
-main =
-  evalRepl (const $ pure ">>> ") cmd [] Nothing Nothing (Word completer) ini final
+    cmd' :: Integer -> String -> IO (Either String String)
+    cmd' s command = do
+      case words command of
+        ("load" : tableName : _) -> do
+          content <- readFile ("src/db/" ++ tableName ++ ".yaml")
+          return $ Right content
+        _ -> do
+          df <- runExecuteIO $ Lib3.executeSql command
+          return $ Lib1.renderDataFrameAsTable s <$> df
 
 runExecuteIO :: Lib3.Execution r -> IO r
 runExecuteIO (Pure r) = return r
@@ -71,6 +75,12 @@ runExecuteIO (Free step) = do
   next <- runStep step
   runExecuteIO next
   where
-    -- probably you will want to extend the interpreter
     runStep :: Lib3.ExecutionAlgebra a -> IO a
     runStep (Lib3.GetTime next) = getCurrentTime >>= return . next
+    runStep (Lib3.LoadFile tableName next) = do
+      content <- readFile ("src/db/" ++ tableName ++ ".yaml")
+      return $ next content
+
+main :: IO ()
+main =
+  evalRepl (const $ pure "Man patinka Haskell'is> ") cmd [] Nothing Nothing (Word completer) ini final

@@ -5,9 +5,28 @@ module Lib3
   ( executeSql,
     Execution,
     ExecutionAlgebra (..),
+    loadFile,
   )
 where
 
+import Control.Exception (IOException, try)
+import Control.Monad.Free (Free (..), liftF)
+import Control.Monad.IO.Class (MonadIO, liftIO)
+import Data.Text qualified as T
+import Data.Time (UTCTime (..), defaultTimeLocale, formatTime)
+import Data.Yaml (FromJSON, ToJSON, decodeFileEither, encodeFile)
+import DataFrame (Column (..), ColumnType (..), DataFrame (..), Row (..), Value (..))
+import InMemoryTables (TableName, database)
+import Control.Exception (IOException, try)
+import Control.Monad.Free (Free (..), liftF)
+import Control.Monad.IO.Class (MonadIO, liftIO)
+import Data.Aeson (FromJSON, eitherDecode, encode)
+import Data.ByteString.Char8 qualified as BS
+import Data.ByteString.Lazy.Char8 qualified as BLC
+import Data.Text qualified as T
+import Data.Time (UTCTime (..), defaultTimeLocale, formatTime)
+import Data.Yaml (FromJSON, ToJSON)
+import DataFrame (Column (..), ColumnType (..), DataFrame (..), Row (..), Value (..))
 import Control.Exception (IOException, try)
 import Control.Monad (foldM)
 import Control.Monad.Free (Free (..), liftF)
@@ -52,6 +71,7 @@ data ParsedStatement
   | Select [ColumnName] [TableName] ContainsWhere Condition
   | Insert TableName [ColumnName] [InsertValues]
   | Update TableName [(ColumnName, InsertValues)] Condition
+  | Delete TableName [ColumnName] [InsertValues] Condition
   deriving (Show, Eq)
 
 data ExecutionAlgebra next
@@ -176,12 +196,14 @@ extractColumnNamesUntilClosingParenthesis sql = do
 -- output :: IO ()
 -- output = BLC.writeFile "output.json" (encode tableEmployees)
 
-readDataFrameFromJSON :: FilePath -> Either String DataFrame
-readDataFrameFromJSON filePath =
+readDataFrameFromYAML :: FilePath -> Either String DataFrame
+readDataFrameFromYAML filePath =
   unsafePerformIO $ do
-    let fullPath = "src/db/" ++ filePath ++ ".json"
-    content <- BLC.readFile fullPath
-    return $ eitherDecode content
+    let fullPath = "src/db/" ++ filePath ++ ".yaml"
+    content <- decodeFileEither fullPath
+    return $ case content of
+      Left err -> Left $ "Error decoding YAML from file " ++ fullPath ++ ": " ++ show err
+      Right df -> Right df
 
 -- readDataFrameFromJSONPure :: FilePath -> Either String DataFrame
 -- readDataFrameFromJSONPure filePath = do
@@ -330,7 +352,7 @@ extractTableNames sql =
 
 createDataFrameFromFiles :: ParsedStatement -> Either ErrorMessage DataFrame
 createDataFrameFromFiles (Select columns tableNames whereBool con) = do
-  dataFrames <- mapM (\tableName -> readDataFrameFromJSON tableName) tableNames
+  dataFrames <- mapM (\tableName -> readDataFrameFromYAML tableName) tableNames
   combinedDataFrame <- combineDataFrames dataFrames
   result <- selectColumns combinedDataFrame columns
   return result
@@ -516,3 +538,49 @@ parseUpdatePairs [] = []
 parseUpdatePairs (column : "=" : value : rest) =
   (map toLower column, value) : parseUpdatePairs rest
 parseUpdatePairs _ = error "Invalid format in the SET clause"
+
+
+containsDelete :: String -> Bool
+containsDelete input = "delete" `elem` words (map toLower input)
+
+-- Update extractColumnNamesAndValues
+extractColumnNamesAndValues :: DataFrame -> ([ColumnName], [InsertValues])
+extractColumnNamesAndValues table =
+  case dataRows table of
+    (firstRow : _) ->
+      let colNames = map (\(Column name _) -> name) (columns table)
+          values = map show firstRow
+      in (colNames, values)
+    _ -> ([], [])
+
+
+-- Update the deleteParser function
+deleteParser :: String -> Either ErrorMessage ParsedStatement
+deleteParser sql =
+  case containsDelete sql of
+    True -> do
+      let sqlWithoutDelete = dropWord sql
+      case "from" `elem` words (map toLower sqlWithoutDelete) of
+        True -> do
+          let sqlWithoutFrom = dropWord sqlWithoutDelete
+          case extractTableName sqlWithoutFrom of
+            Right tableName -> do
+              let sqlWithoutTableName = dropWord sqlWithoutFrom
+              case "where" `elem` words (map toLower sqlWithoutTableName) of
+                True -> do
+                  let sqlWithoutWhere = dropWord sqlWithoutTableName
+                  let (condition, rest) = break (== "where") (words sqlWithoutWhere)
+                  case condition of
+                    [] -> Left "Error: Missing condition in WHERE clause"
+                    _ -> do
+                      let parsedCondition = unwords condition
+                      -- Now, let's retrieve column names and values for the specified condition
+                      case createDataFrameFromFiles (Select [] [tableName] True parsedCondition) of
+                        Right dataFrame ->
+                          let (colNames, values) = extractColumnNamesAndValues dataFrame
+                           in Right (Delete tableName colNames values parsedCondition)
+                        Left errorMessage -> Left errorMessage
+                False -> Right (Delete tableName [] [] "")
+            Left errorMessage -> Left errorMessage
+        False -> Left "Error: Missing FROM clause in DELETE statement"
+    False -> Left "Error: SQL statement does not contain 'delete'"
