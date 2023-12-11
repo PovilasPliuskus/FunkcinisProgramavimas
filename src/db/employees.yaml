@@ -4,7 +4,7 @@
     - StringType
   - - surname
     - StringType
-- - - contents: 1
+- - - contents: 15
       tag: IntegerValue
     - contents: Vi
       tag: StringValue

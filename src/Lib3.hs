@@ -25,7 +25,7 @@ import Data.Time (TimeZone (..), UTCTime (..), defaultTimeLocale, getCurrentTime
 import Data.Time.Clock (UTCTime, addUTCTime, nominalDiffTimeToSeconds)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Time.Format (formatTime)
-import Data.Yaml (FromJSON, ToJSON)
+import Data.Yaml (FromJSON, ToJSON, decodeFileEither)
 import Data.Yaml qualified as Y
 import DataFrame (Column (..), ColumnType (..), DataFrame (..), Row (..), Value (..))
 import GHC.Generics
@@ -185,6 +185,15 @@ readDataFrameFromJSON filePath =
     content <- BLC.readFile fullPath
     return $ eitherDecode content
 
+readDataFrameFromYAML :: FilePath -> Either String DataFrame
+readDataFrameFromYAML filePath =
+  unsafePerformIO $ do
+    let fullPath = "src/db/" ++ filePath ++ ".yaml"
+    result <- decodeFileEither fullPath
+    return $ case result of
+      Right dataFrame -> Right dataFrame
+      Left err -> Left $ "Error decoding YAML from file " ++ fullPath ++ ": " ++ show err
+
 -- readDataFrameFromJSONPure :: FilePath -> Either String DataFrame
 -- readDataFrameFromJSONPure filePath = do
 --   let fullPath = "src/db/" ++ filePath ++ ".json"
@@ -332,7 +341,7 @@ extractTableNames sql =
 
 createDataFrameFromFiles :: ParsedStatement -> Either ErrorMessage DataFrame
 createDataFrameFromFiles (Select columns tableNames whereBool con) = do
-  dataFrames <- mapM (\tableName -> readDataFrameFromJSON tableName) tableNames
+  dataFrames <- mapM (\tableName -> readDataFrameFromYAML tableName) tableNames
   combinedDataFrame <- combineDataFrames dataFrames
   result <- selectColumns combinedDataFrame columns
   return result
