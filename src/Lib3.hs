@@ -25,7 +25,7 @@ import Data.Time (TimeZone (..), UTCTime (..), defaultTimeLocale, getCurrentTime
 import Data.Time.Clock (UTCTime, addUTCTime, nominalDiffTimeToSeconds)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Time.Format (formatTime)
-import Data.Yaml (FromJSON, ToJSON)
+import Data.Yaml (FromJSON, ToJSON, decodeFileEither)
 import Data.Yaml qualified as Y
 import DataFrame (Column (..), ColumnType (..), DataFrame (..), Row (..), Value (..))
 import GHC.Generics
@@ -45,9 +45,12 @@ type Database = [(TableName, DataFrame)]
 
 type ColumnName = String
 
+type InsertValues = String
+
 data ParsedStatement
   = ParsedStatement
   | Select [ColumnName] [TableName] ContainsWhere Condition
+  | Insert TableName [ColumnName] [InsertValues]
   deriving (Show, Eq)
 
 data ExecutionAlgebra next
@@ -69,6 +72,14 @@ executeSql sql
   | isNowStatement sql = do
       currentTime <- getTime
       return $ Right (createNowDataFrame currentTime)
+  | containsInsert sql = do
+      case insertParser sql of
+        Right (Insert tableName columns values) -> do
+          case readDataFrameFromJSON tableName of
+            Right dataFrame -> do
+              return $ Right dataFrame
+            Left errorMessage -> return $ Left errorMessage
+        Left errorMessage -> return $ Left errorMessage
   | otherwise = do
       case parseSelect sql of
         Right tableName -> do
@@ -95,6 +106,56 @@ executeSql sql
                 Left errorMessage -> return $ Left errorMessage
             Left errorMessage -> return $ Left errorMessage
         Left errorMessage -> return $ Left errorMessage
+
+containsInsert :: String -> Bool
+containsInsert input = case words (map toLower input) of
+  ("insert" : _) -> True
+  _ -> False
+
+containsInto :: String -> Bool
+containsInto input = case words (map toLower input) of
+  ("into" : _) -> True
+  _ -> False
+
+containsValues :: String -> Bool
+containsValues input = case words (map toLower input) of
+  ("values" : _) -> True
+  _ -> False
+
+extractTableName :: String -> Either ErrorMessage TableName
+extractTableName str =
+  case words str of
+    [] -> Left "Error: Please enter a table name"
+    (tableName : _) -> Right tableName
+
+containsOpeningBracket :: String -> Bool
+containsOpeningBracket input = not (null input) && head input == '('
+
+dropChar :: String -> String
+dropChar [] = []
+dropChar (_ : xs) = xs
+
+dropWord :: String -> String
+dropWord = unwords . drop 1 . words
+
+getSubstringBeforeLastClosingParen :: String -> Either ErrorMessage String
+getSubstringBeforeLastClosingParen s =
+  case break (== ')') s of
+    (before, ')' : after) -> Right (before ++ " from")
+    _ -> Left "Error: No closing parenthesis found"
+
+getSubstringAfterLastClosingParen :: String -> String
+getSubstringAfterLastClosingParen s = go s ""
+  where
+    go :: String -> String -> String
+    go [] acc = acc
+    go (')' : rest) acc = rest
+    go (c : rest) acc = go rest (c : acc)
+
+extractColumnNamesUntilClosingParenthesis :: String -> Either ErrorMessage [ColumnName]
+extractColumnNamesUntilClosingParenthesis sql = do
+  substring <- getSubstringBeforeLastClosingParen sql
+  extractColumns substring
 
 -- tableEmployees :: DataFrame
 -- tableEmployees =
@@ -123,6 +184,15 @@ readDataFrameFromJSON filePath =
     let fullPath = "src/db/" ++ filePath ++ ".json"
     content <- BLC.readFile fullPath
     return $ eitherDecode content
+
+readDataFrameFromYAML :: FilePath -> Either String DataFrame
+readDataFrameFromYAML filePath =
+  unsafePerformIO $ do
+    let fullPath = "src/db/" ++ filePath ++ ".yaml"
+    result <- decodeFileEither fullPath
+    return $ case result of
+      Right dataFrame -> Right dataFrame
+      Left err -> Left $ "Error decoding YAML from file " ++ fullPath ++ ": " ++ show err
 
 -- readDataFrameFromJSONPure :: FilePath -> Either String DataFrame
 -- readDataFrameFromJSONPure filePath = do
@@ -271,7 +341,7 @@ extractTableNames sql =
 
 createDataFrameFromFiles :: ParsedStatement -> Either ErrorMessage DataFrame
 createDataFrameFromFiles (Select columns tableNames whereBool con) = do
-  dataFrames <- mapM (\tableName -> readDataFrameFromJSON tableName) tableNames
+  dataFrames <- mapM (\tableName -> readDataFrameFromYAML tableName) tableNames
   combinedDataFrame <- combineDataFrames dataFrames
   result <- selectColumns combinedDataFrame columns
   return result
@@ -331,3 +401,40 @@ helperFunction sql = do
             Left errorMessage -> Left errorMessage
         Left errorMessage -> Left errorMessage
     Left errorMessage -> Left errorMessage
+
+insertParser :: String -> Either ErrorMessage ParsedStatement
+insertParser sql =
+  case containsInsert sql of
+    True -> do
+      let sqlWithoutInsert = dropWord sql
+      case containsInto sqlWithoutInsert of
+        True -> do
+          let sqlWithoutInto = dropWord sqlWithoutInsert
+          case extractTableName sqlWithoutInto of
+            Right tableName -> do
+              let sqlWithoutTableName = dropWord sqlWithoutInto
+              case containsOpeningBracket sqlWithoutTableName of
+                True -> do
+                  let sqlWithoutOB = dropChar sqlWithoutTableName
+                  case extractColumnNamesUntilClosingParenthesis sqlWithoutOB of
+                    Right columns -> do
+                      -- let parsedStatement = Insert tableName columns
+                      let sqlWithoutColumnNames = getSubstringAfterLastClosingParen sqlWithoutOB
+                      case containsValues sqlWithoutColumnNames of
+                        True -> do
+                          let sqlWithoutValues = dropWord sqlWithoutColumnNames
+                          case containsOpeningBracket sqlWithoutValues of
+                            True -> do
+                              let sqlWithoutSecondOB = dropChar sqlWithoutValues
+                              case extractColumnNamesUntilClosingParenthesis sqlWithoutSecondOB of
+                                Right values -> do
+                                  let parsedStatement = Insert tableName columns values
+                                  Right parsedStatement
+                                Left errorMessage -> Left errorMessage
+                            False -> Left "Error: Missing opening brace"
+                        False -> Left "Error: SQL statement does not contain 'values'"
+                    Left errorMessage -> Left errorMessage
+                False -> Left "Error: Missing opening brace"
+            Left errorMessage -> Left errorMessage
+        False -> Left "Error: SQL statement does not contain 'into'"
+    False -> Left "Error: SQL statement does not contain 'insert'"
