@@ -82,6 +82,15 @@ executeSql sql
               return updatedDataFrame
             Left errorMessage -> return $ Left errorMessage
         Left errorMessage -> return $ Left errorMessage
+  | containsDelete sql = do
+      case deleteParser sql of
+        Right (Delete tableName condition) -> do
+          case readDataFrameFromYAML tableName of
+            Right existingDataFrame -> do
+              let updatedDataFrame = deleteFromDataFrame (Delete tableName condition) existingDataFrame
+              return updatedDataFrame
+            Left errorMessage -> return $ Left errorMessage
+        Left errorMessage -> return $ Left errorMessage
   | otherwise = do
       case parseSelect sql of
         Right tableName -> do
@@ -434,6 +443,31 @@ deleteParser sql =
             Left errorMessage -> Left errorMessage
         False -> Left "Error: DELETE statement does not contain 'from'"
     False -> Left "Error: SQL statement does not contain 'delete'"
+
+deleteFromDataFrame :: ParsedStatement -> DataFrame -> Either ErrorMessage DataFrame
+deleteFromDataFrame (Delete tableName condition) (DataFrame existingColumns existingRows) =
+  case extractConditionParts condition of
+    (column, value) -> do
+      let columnIndex = getColumnIndex (DataFrame existingColumns []) column
+      case columnIndex of
+        Just index -> do
+          let filteredRows = filter (\row -> not (checkCondition row index value)) existingRows
+              updatedDataFrame = DataFrame existingColumns filteredRows
+          -- Use unsafePerformIO to perform the IO action inside the Either monad
+          let result = unsafePerformIO $ do
+                encodeDataFrame updatedDataFrame tableName
+                return $ Right updatedDataFrame
+          seq result (return updatedDataFrame)
+        Nothing -> Left "Error: Column not found in the DataFrame"
+  where
+    checkCondition :: Row -> Int -> String -> Bool
+    checkCondition row columnIndex value =
+      case (row !! columnIndex, value) of
+        (StringValue str, _) -> map toLower str == map toLower value
+        (IntegerValue int, _) -> show int == value
+        (BoolValue bool, "true") -> bool
+        (BoolValue bool, "false") -> not bool
+        _ -> False
 
 insertParser :: String -> Either ErrorMessage ParsedStatement
 insertParser sql =
