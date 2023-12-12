@@ -75,9 +75,10 @@ executeSql sql
   | containsInsert sql = do
       case insertParser sql of
         Right (Insert tableName columns values) -> do
-          case readDataFrameFromJSON tableName of
-            Right dataFrame -> do
-              return $ Right dataFrame
+          case readDataFrameFromYAML tableName of
+            Right existingDataFrame -> do
+              let updatedDataFrame = insertToDataFrame (Insert tableName columns values) existingDataFrame
+              return updatedDataFrame
             Left errorMessage -> return $ Left errorMessage
         Left errorMessage -> return $ Left errorMessage
   | otherwise = do
@@ -438,3 +439,22 @@ insertParser sql =
             Left errorMessage -> Left errorMessage
         False -> Left "Error: SQL statement does not contain 'into'"
     False -> Left "Error: SQL statement does not contain 'insert'"
+
+insertToDataFrame :: ParsedStatement -> DataFrame -> Either ErrorMessage DataFrame
+insertToDataFrame (Insert tableName columns values) (DataFrame existingColumns existingRows) =
+  if length columns /= length values
+    then Left "Number of columns doesn't match the number of values."
+    else
+      if not (allColumnsExist columns existingColumns)
+        then Left "One or more columns do not exist in the DataFrame."
+        else Right $ DataFrame existingColumns (existingRows ++ [map parseValue values])
+  where
+    allColumnsExist :: [ColumnName] -> [Column] -> Bool
+    allColumnsExist cols dfColumns = all (\col -> col `elem` map columnName dfColumns) cols
+
+    parseValue :: String -> Value
+    parseValue val = StringValue val
+    -- If you have other types, add more cases to parseValue
+
+    columnName :: Column -> ColumnName
+    columnName (Column name _) = name
