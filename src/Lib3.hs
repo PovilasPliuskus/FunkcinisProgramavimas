@@ -447,19 +447,32 @@ insertToDataFrame (Insert tableName columns values) (DataFrame existingColumns e
     else
       if not (allColumnsExist columns existingColumns)
         then Left "One or more columns do not exist in the DataFrame."
-        else
-          let updatedDataFrame = DataFrame existingColumns (existingRows ++ [map parseValue values])
-           in Right $ unsafePerformIO $ do
-                -- Perform the IO action outside the Either monad
-                encodeDataFrame updatedDataFrame tableName
-                return updatedDataFrame
+        else do
+          let updatedDataFrame = DataFrame existingColumns (existingRows ++ [map parseValue (zip columns values)])
+          -- Use unsafePerformIO to perform the IO action inside the Either monad
+          let result = unsafePerformIO $ encodeDataFrame updatedDataFrame tableName
+          seq result (return updatedDataFrame)
   where
     allColumnsExist :: [ColumnName] -> [Column] -> Bool
     allColumnsExist cols dfColumns = all (\col -> col `elem` map columnName dfColumns) cols
 
-    parseValue :: String -> Value
-    parseValue val = StringValue val
-    -- If you have other types, add more cases to parseValue
+    parseValue :: (ColumnName, String) -> Value
+    parseValue (col, val) = case getColumnByName col existingColumns of
+      Just (Column _ colType) -> parseTypedValue colType val
+      Nothing -> StringValue val
+
+    parseTypedValue :: ColumnType -> String -> Value
+    parseTypedValue IntegerType val = case reads val of
+      [(intVal, "")] -> IntegerValue intVal
+      _ -> StringValue val
+    parseTypedValue StringType val = StringValue val
+    parseTypedValue BoolType val = case map toLower val of
+      "true" -> BoolValue True
+      "false" -> BoolValue False
+      _ -> StringValue val
+
+    getColumnByName :: ColumnName -> [Column] -> Maybe Column
+    getColumnByName name cols = find (\(Column n _) -> map toLower n == map toLower name) cols
 
     columnName :: Column -> ColumnName
     columnName (Column name _) = name
