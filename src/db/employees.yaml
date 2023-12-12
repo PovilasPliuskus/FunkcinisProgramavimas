@@ -4,7 +4,7 @@
     - StringType
   - - surname
     - StringType
-- - - contents: 15
+- - - contents: 1
       tag: IntegerValue
     - contents: Vi
       tag: StringValue
@@ -16,7 +16,7 @@
       tag: StringValue
     - contents: Dl
       tag: StringValue
-  - - contents: 3
+  - - contents: 22
       tag: IntegerValue
     - contents: jonas
       tag: StringValue
