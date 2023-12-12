@@ -1,0 +1,24 @@
+- - - id
+    - IntegerType
+  - - name
+    - StringType
+  - - surname
+    - StringType
+- - - contents: 15
+      tag: IntegerValue
+    - contents: Vi
+      tag: StringValue
+    - contents: Po
+      tag: StringValue
+  - - contents: 2
+      tag: IntegerValue
+    - contents: Ed
+      tag: StringValue
+    - contents: Dl
+      tag: StringValue
+  - - contents: '3'
+      tag: StringValue
+    - contents: jonas
+      tag: StringValue
+    - contents: jonaitis
+      tag: StringValue

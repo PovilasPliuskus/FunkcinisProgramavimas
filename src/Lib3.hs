@@ -12,7 +12,7 @@ import Control.Exception (IOException, try)
 import Control.Monad (foldM)
 import Control.Monad.Free (Free (..), liftF)
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Data.Aeson (FromJSON, eitherDecode, encode)
+import Data.Aeson (FromJSON, eitherDecode)
 import Data.ByteString.Char8 qualified as BS
 import Data.ByteString.Lazy.Char8 qualified as BLC
 import Data.Char (isSpace, toLower, toUpper)
@@ -25,7 +25,7 @@ import Data.Time (TimeZone (..), UTCTime (..), defaultTimeLocale, getCurrentTime
 import Data.Time.Clock (UTCTime, addUTCTime, nominalDiffTimeToSeconds)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Time.Format (formatTime)
-import Data.Yaml (FromJSON, ToJSON, decodeFileEither)
+import Data.Yaml (FromJSON, ToJSON, decodeFileEither, encode)
 import Data.Yaml qualified as Y
 import DataFrame (Column (..), ColumnType (..), DataFrame (..), Row (..), Value (..))
 import GHC.Generics
@@ -176,8 +176,8 @@ extractColumnNamesUntilClosingParenthesis sql = do
 --       [StringValue "b", BoolValue False]
 --     ]
 
--- output :: IO ()
--- output = BLC.writeFile "output.json" (encode tableEmployees)
+encodeDataFrame :: DataFrame -> TableName -> IO ()
+encodeDataFrame df tableName = BS.writeFile (tableName ++ ".yaml") (encode df)
 
 readDataFrameFromJSON :: FilePath -> Either String DataFrame
 readDataFrameFromJSON filePath =
@@ -447,7 +447,12 @@ insertToDataFrame (Insert tableName columns values) (DataFrame existingColumns e
     else
       if not (allColumnsExist columns existingColumns)
         then Left "One or more columns do not exist in the DataFrame."
-        else Right $ DataFrame existingColumns (existingRows ++ [map parseValue values])
+        else
+          let updatedDataFrame = DataFrame existingColumns (existingRows ++ [map parseValue values])
+           in Right $ unsafePerformIO $ do
+                -- Perform the IO action outside the Either monad
+                encodeDataFrame updatedDataFrame tableName
+                return updatedDataFrame
   where
     allColumnsExist :: [ColumnName] -> [Column] -> Bool
     allColumnsExist cols dfColumns = all (\col -> col `elem` map columnName dfColumns) cols
