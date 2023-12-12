@@ -177,7 +177,7 @@ extractColumnNamesUntilClosingParenthesis sql = do
 --     ]
 
 encodeDataFrame :: DataFrame -> TableName -> IO ()
-encodeDataFrame df tableName = BS.writeFile (tableName ++ ".yaml") (encode df)
+encodeDataFrame df tableName = BS.writeFile ("src/db/" ++ tableName ++ ".yaml") (encode df)
 
 readDataFrameFromJSON :: FilePath -> Either String DataFrame
 readDataFrameFromJSON filePath =
