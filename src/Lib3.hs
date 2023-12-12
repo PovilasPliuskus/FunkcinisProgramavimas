@@ -51,6 +51,7 @@ data ParsedStatement
   = ParsedStatement
   | Select [ColumnName] [TableName] ContainsWhere Condition
   | Insert TableName [ColumnName] [InsertValues]
+  | Delete TableName Condition
   deriving (Show, Eq)
 
 data ExecutionAlgebra next
@@ -107,6 +108,16 @@ executeSql sql
                 Left errorMessage -> return $ Left errorMessage
             Left errorMessage -> return $ Left errorMessage
         Left errorMessage -> return $ Left errorMessage
+
+containsDelete :: String -> Bool
+containsDelete input = case words (map toLower input) of
+  ("delete" : _) -> True
+  _ -> False
+
+containsFrom :: String -> Bool
+containsFrom input = case words (map toLower input) of
+  ("from" : _) -> True
+  _ -> False
 
 containsInsert :: String -> Bool
 containsInsert input = case words (map toLower input) of
@@ -402,6 +413,27 @@ helperFunction sql = do
             Left errorMessage -> Left errorMessage
         Left errorMessage -> Left errorMessage
     Left errorMessage -> Left errorMessage
+
+deleteParser :: String -> Either ErrorMessage ParsedStatement
+deleteParser sql =
+  case containsDelete sql of
+    True -> do
+      let sqlWithoutDelete = dropWord sql
+      case containsFrom sqlWithoutDelete of
+        True -> do
+          let sqlWithoutFrom = dropWord sqlWithoutDelete
+          case extractTableName sqlWithoutFrom of
+            Right tableName -> do
+              let sqlWithoutTableName = dropWord sqlWithoutFrom
+              case containsWhere sqlWithoutTableName of
+                True -> do
+                  let sqlWithoutWhere = dropWord sqlWithoutTableName
+                  let condition = removeTrailingSemicolon sqlWithoutWhere
+                  return $ Delete tableName condition
+                False -> return $ Delete tableName ""
+            Left errorMessage -> Left errorMessage
+        False -> Left "Error: DELETE statement does not contain 'from'"
+    False -> Left "Error: SQL statement does not contain 'delete'"
 
 insertParser :: String -> Either ErrorMessage ParsedStatement
 insertParser sql =
