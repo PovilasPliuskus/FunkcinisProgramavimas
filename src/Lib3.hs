@@ -12,7 +12,7 @@ import Control.Exception (IOException, try)
 import Control.Monad (foldM)
 import Control.Monad.Free (Free (..), liftF)
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Data.Aeson (FromJSON, eitherDecode, encode)
+import Data.Aeson (FromJSON, eitherDecode)
 import Data.ByteString.Char8 qualified as BS
 import Data.ByteString.Lazy.Char8 qualified as BLC
 import Data.Char (isSpace, toLower, toUpper)
@@ -25,7 +25,7 @@ import Data.Time (TimeZone (..), UTCTime (..), defaultTimeLocale, getCurrentTime
 import Data.Time.Clock (UTCTime, addUTCTime, nominalDiffTimeToSeconds)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Time.Format (formatTime)
-import Data.Yaml (FromJSON, ToJSON, decodeFileEither)
+import Data.Yaml (FromJSON, ToJSON, decodeFileEither, encode)
 import Data.Yaml qualified as Y
 import DataFrame (Column (..), ColumnType (..), DataFrame (..), Row (..), Value (..))
 import GHC.Generics
@@ -75,9 +75,10 @@ executeSql sql
   | containsInsert sql = do
       case insertParser sql of
         Right (Insert tableName columns values) -> do
-          case readDataFrameFromJSON tableName of
-            Right dataFrame -> do
-              return $ Right dataFrame
+          case readDataFrameFromYAML tableName of
+            Right existingDataFrame -> do
+              let updatedDataFrame = insertToDataFrame (Insert tableName columns values) existingDataFrame
+              return updatedDataFrame
             Left errorMessage -> return $ Left errorMessage
         Left errorMessage -> return $ Left errorMessage
   | otherwise = do
@@ -175,8 +176,8 @@ extractColumnNamesUntilClosingParenthesis sql = do
 --       [StringValue "b", BoolValue False]
 --     ]
 
--- output :: IO ()
--- output = BLC.writeFile "output.json" (encode tableEmployees)
+encodeDataFrame :: DataFrame -> TableName -> IO ()
+encodeDataFrame df tableName = BS.writeFile ("src/db/" ++ tableName ++ ".yaml") (encode df)
 
 readDataFrameFromJSON :: FilePath -> Either String DataFrame
 readDataFrameFromJSON filePath =
@@ -438,3 +439,40 @@ insertParser sql =
             Left errorMessage -> Left errorMessage
         False -> Left "Error: SQL statement does not contain 'into'"
     False -> Left "Error: SQL statement does not contain 'insert'"
+
+insertToDataFrame :: ParsedStatement -> DataFrame -> Either ErrorMessage DataFrame
+insertToDataFrame (Insert tableName columns values) (DataFrame existingColumns existingRows) =
+  if length columns /= length values
+    then Left "Number of columns doesn't match the number of values."
+    else
+      if not (allColumnsExist columns existingColumns)
+        then Left "One or more columns do not exist in the DataFrame."
+        else do
+          let updatedDataFrame = DataFrame existingColumns (existingRows ++ [map parseValue (zip columns values)])
+          -- Use unsafePerformIO to perform the IO action inside the Either monad
+          let result = unsafePerformIO $ encodeDataFrame updatedDataFrame tableName
+          seq result (return updatedDataFrame)
+  where
+    allColumnsExist :: [ColumnName] -> [Column] -> Bool
+    allColumnsExist cols dfColumns = all (\col -> col `elem` map columnName dfColumns) cols
+
+    parseValue :: (ColumnName, String) -> Value
+    parseValue (col, val) = case getColumnByName col existingColumns of
+      Just (Column _ colType) -> parseTypedValue colType val
+      Nothing -> StringValue val
+
+    parseTypedValue :: ColumnType -> String -> Value
+    parseTypedValue IntegerType val = case reads val of
+      [(intVal, "")] -> IntegerValue intVal
+      _ -> StringValue val
+    parseTypedValue StringType val = StringValue val
+    parseTypedValue BoolType val = case map toLower val of
+      "true" -> BoolValue True
+      "false" -> BoolValue False
+      _ -> StringValue val
+
+    getColumnByName :: ColumnName -> [Column] -> Maybe Column
+    getColumnByName name cols = find (\(Column n _) -> map toLower n == map toLower name) cols
+
+    columnName :: Column -> ColumnName
+    columnName (Column name _) = name
