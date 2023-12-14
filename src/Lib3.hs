@@ -5,33 +5,14 @@ module Lib3
   ( executeSql,
     Execution,
     ExecutionAlgebra (..),
-    loadFile,
   )
 where
 
 import Control.Exception (IOException, try)
-import Control.Monad.Free (Free (..), liftF)
-import Control.Monad.IO.Class (MonadIO, liftIO)
-import Data.Text qualified as T
-import Data.Time (UTCTime (..), defaultTimeLocale, formatTime)
-import Data.Yaml (FromJSON, ToJSON, decodeFileEither, encodeFile)
-import DataFrame (Column (..), ColumnType (..), DataFrame (..), Row (..), Value (..))
-import InMemoryTables (TableName, database)
-import Control.Exception (IOException, try)
-import Control.Monad.Free (Free (..), liftF)
-import Control.Monad.IO.Class (MonadIO, liftIO)
-import Data.Aeson (FromJSON, eitherDecode, encode)
-import Data.ByteString.Char8 qualified as BS
-import Data.ByteString.Lazy.Char8 qualified as BLC
-import Data.Text qualified as T
-import Data.Time (UTCTime (..), defaultTimeLocale, formatTime)
-import Data.Yaml (FromJSON, ToJSON)
-import DataFrame (Column (..), ColumnType (..), DataFrame (..), Row (..), Value (..))
-import Control.Exception (IOException, try)
 import Control.Monad (foldM)
 import Control.Monad.Free (Free (..), liftF)
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Data.Aeson (FromJSON, eitherDecode, encode)
+import Data.Aeson (FromJSON, eitherDecode)
 import Data.ByteString.Char8 qualified as BS
 import Data.ByteString.Lazy.Char8 qualified as BLC
 import Data.Char (isSpace, toLower, toUpper)
@@ -44,7 +25,7 @@ import Data.Time (TimeZone (..), UTCTime (..), defaultTimeLocale, getCurrentTime
 import Data.Time.Clock (UTCTime, addUTCTime, nominalDiffTimeToSeconds)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Time.Format (formatTime)
-import Data.Yaml (FromJSON, ToJSON)
+import Data.Yaml (FromJSON, ToJSON, decodeFileEither, encode)
 import Data.Yaml qualified as Y
 import DataFrame (Column (..), ColumnType (..), DataFrame (..), Row (..), Value (..))
 import GHC.Generics
@@ -70,14 +51,13 @@ data ParsedStatement
   = ParsedStatement
   | Select [ColumnName] [TableName] ContainsWhere Condition
   | Insert TableName [ColumnName] [InsertValues]
+  | Delete TableName Condition
   | Update TableName [(ColumnName, InsertValues)] Condition
-  | Delete TableName [ColumnName] [InsertValues] Condition
   deriving (Show, Eq)
 
 data ExecutionAlgebra next
   = LoadFile TableName (FileContent -> next)
   | GetTime (UTCTime -> next)
-  | UpdateTable TableName [(ColumnName, InsertValues)] Condition (Either ErrorMessage DataFrame -> next)
   -- feel free to add more constructors here
   deriving (Functor)
 
@@ -89,15 +69,38 @@ loadFile name = liftF $ LoadFile name id
 getTime :: Execution UTCTime
 getTime = liftF $ GetTime id
 
-updateTable :: TableName -> [(ColumnName, InsertValues)] -> Condition -> Execution (Either ErrorMessage DataFrame)
-updateTable tableName updates condition = liftF $ UpdateTable tableName updates condition id
-
 executeSql :: String -> Execution (Either ErrorMessage DataFrame)
 executeSql sql
   | isNowStatement sql = do
       currentTime <- getTime
       return $ Right (createNowDataFrame currentTime)
-  | containsUpdate sql = executeUpdate sql
+  | containsInsert sql = do
+      case insertParser sql of
+        Right (Insert tableName columns values) -> do
+          case readDataFrameFromYAML tableName of
+            Right existingDataFrame -> do
+              let updatedDataFrame = insertToDataFrame (Insert tableName columns values) existingDataFrame
+              return updatedDataFrame
+            Left errorMessage -> return $ Left errorMessage
+        Left errorMessage -> return $ Left errorMessage
+  | containsDelete sql = do
+      case deleteParser sql of
+        Right (Delete tableName condition) -> do
+          case readDataFrameFromYAML tableName of
+            Right existingDataFrame -> do
+              let updatedDataFrame = deleteFromDataFrame (Delete tableName condition) existingDataFrame
+              return updatedDataFrame
+            Left errorMessage -> return $ Left errorMessage
+        Left errorMessage -> return $ Left errorMessage
+  | containsUpdate sql = do
+      case updateParser sql of
+        Right (Update tableName updates condition) -> do
+          case readDataFrameFromYAML tableName of
+            Right existingDataFrame -> do
+              let updatedDataFrame = updateDataFrame (Update tableName updates condition) existingDataFrame
+              return updatedDataFrame
+            Left errorMessage -> return $ Left errorMessage
+        Left errorMessage -> return $ Left errorMessage
   | otherwise = do
       case parseSelect sql of
         Right tableName -> do
@@ -124,6 +127,16 @@ executeSql sql
                 Left errorMessage -> return $ Left errorMessage
             Left errorMessage -> return $ Left errorMessage
         Left errorMessage -> return $ Left errorMessage
+
+containsDelete :: String -> Bool
+containsDelete input = case words (map toLower input) of
+  ("delete" : _) -> True
+  _ -> False
+
+containsFrom :: String -> Bool
+containsFrom input = case words (map toLower input) of
+  ("from" : _) -> True
+  _ -> False
 
 containsInsert :: String -> Bool
 containsInsert input = case words (map toLower input) of
@@ -193,17 +206,24 @@ extractColumnNamesUntilClosingParenthesis sql = do
 --       [StringValue "b", BoolValue False]
 --     ]
 
--- output :: IO ()
--- output = BLC.writeFile "output.json" (encode tableEmployees)
+encodeDataFrame :: DataFrame -> TableName -> IO ()
+encodeDataFrame df tableName = BS.writeFile ("src/db/" ++ tableName ++ ".yaml") (encode df)
+
+readDataFrameFromJSON :: FilePath -> Either String DataFrame
+readDataFrameFromJSON filePath =
+  unsafePerformIO $ do
+    let fullPath = "src/db/" ++ filePath ++ ".json"
+    content <- BLC.readFile fullPath
+    return $ eitherDecode content
 
 readDataFrameFromYAML :: FilePath -> Either String DataFrame
 readDataFrameFromYAML filePath =
   unsafePerformIO $ do
     let fullPath = "src/db/" ++ filePath ++ ".yaml"
-    content <- decodeFileEither fullPath
-    return $ case content of
+    result <- decodeFileEither fullPath
+    return $ case result of
+      Right dataFrame -> Right dataFrame
       Left err -> Left $ "Error decoding YAML from file " ++ fullPath ++ ": " ++ show err
-      Right df -> Right df
 
 -- readDataFrameFromJSONPure :: FilePath -> Either String DataFrame
 -- readDataFrameFromJSONPure filePath = do
@@ -413,6 +433,52 @@ helperFunction sql = do
         Left errorMessage -> Left errorMessage
     Left errorMessage -> Left errorMessage
 
+deleteParser :: String -> Either ErrorMessage ParsedStatement
+deleteParser sql =
+  case containsDelete sql of
+    True -> do
+      let sqlWithoutDelete = dropWord sql
+      case containsFrom sqlWithoutDelete of
+        True -> do
+          let sqlWithoutFrom = dropWord sqlWithoutDelete
+          case extractTableName sqlWithoutFrom of
+            Right tableName -> do
+              let sqlWithoutTableName = dropWord sqlWithoutFrom
+              case containsWhere sqlWithoutTableName of
+                True -> do
+                  let sqlWithoutWhere = dropWord sqlWithoutTableName
+                  let condition = removeTrailingSemicolon sqlWithoutWhere
+                  return $ Delete tableName condition
+                False -> return $ Delete tableName ""
+            Left errorMessage -> Left errorMessage
+        False -> Left "Error: DELETE statement does not contain 'from'"
+    False -> Left "Error: SQL statement does not contain 'delete'"
+
+deleteFromDataFrame :: ParsedStatement -> DataFrame -> Either ErrorMessage DataFrame
+deleteFromDataFrame (Delete tableName condition) (DataFrame existingColumns existingRows) =
+  case extractConditionParts condition of
+    (column, value) -> do
+      let columnIndex = getColumnIndex (DataFrame existingColumns []) column
+      case columnIndex of
+        Just index -> do
+          let filteredRows = filter (\row -> not (checkCondition row index value)) existingRows
+              updatedDataFrame = DataFrame existingColumns filteredRows
+          -- Use unsafePerformIO to perform the IO action inside the Either monad
+          let result = unsafePerformIO $ do
+                encodeDataFrame updatedDataFrame tableName
+                return $ Right updatedDataFrame
+          seq result (return updatedDataFrame)
+        Nothing -> Left "Error: Column not found in the DataFrame"
+  where
+    checkCondition :: Row -> Int -> String -> Bool
+    checkCondition row columnIndex value =
+      case (row !! columnIndex, value) of
+        (StringValue str, _) -> map toLower str == map toLower value
+        (IntegerValue int, _) -> show int == value
+        (BoolValue bool, "true") -> bool
+        (BoolValue bool, "false") -> not bool
+        _ -> False
+
 insertParser :: String -> Either ErrorMessage ParsedStatement
 insertParser sql =
   case containsInsert sql of
@@ -450,63 +516,103 @@ insertParser sql =
         False -> Left "Error: SQL statement does not contain 'into'"
     False -> Left "Error: SQL statement does not contain 'insert'"
 
+insertToDataFrame :: ParsedStatement -> DataFrame -> Either ErrorMessage DataFrame
+insertToDataFrame (Insert tableName columns values) (DataFrame existingColumns existingRows) =
+  if length columns /= length values
+    then Left "Number of columns doesn't match the number of values."
+    else
+      if not (allColumnsExist columns existingColumns)
+        then Left "One or more columns do not exist in the DataFrame."
+        else do
+          let updatedDataFrame = DataFrame existingColumns (existingRows ++ [map parseValue (zip columns values)])
+          -- Use unsafePerformIO to perform the IO action inside the Either monad
+          let result = unsafePerformIO $ encodeDataFrame updatedDataFrame tableName
+          seq result (return updatedDataFrame)
+  where
+    allColumnsExist :: [ColumnName] -> [Column] -> Bool
+    allColumnsExist cols dfColumns = all (\col -> col `elem` map columnName dfColumns) cols
 
-executeUpdate :: String -> Execution (Either ErrorMessage DataFrame)
-executeUpdate sql = do
-  case insertParser sql of
-    Right (Update tableName updates condition) -> do
-      let hasWhere = not (null condition)
-      case createDataFrameFromFiles (Select [] [tableName] hasWhere condition) of
-        Right dataFrame -> do
-          let updatedDataFrame = updateDataFrame dataFrame updates
-          return $ Right updatedDataFrame
-        Left errorMessage -> return $ Left errorMessage
-    Left errorMessage -> return $ Left errorMessage
+    parseValue :: (ColumnName, String) -> Value
+    parseValue (col, val) = case getColumnByName col existingColumns of
+      Just (Column _ colType) -> parseTypedValue colType val
+      Nothing -> StringValue val
 
--- Function to update values in a DataFrame based on the Update operation
--- ...
--- Function to update values in a DataFrame based on the Update operation
-updateDataFrame :: DataFrame -> [(ColumnName, InsertValues)] -> DataFrame
-updateDataFrame table updates =
-  let columnIndexMap = mapColumnIndex (columns table)
-      updatedRows = map (updateRow columnIndexMap table updates) (dataRows table)
-   in DataFrame (columns table) updatedRows
+    parseTypedValue :: ColumnType -> String -> Value
+    parseTypedValue IntegerType val = case reads val of
+      [(intVal, "")] -> IntegerValue intVal
+      _ -> StringValue val
+    parseTypedValue StringType val = StringValue val
+    parseTypedValue BoolType val = case map toLower val of
+      "true" -> BoolValue True
+      "false" -> BoolValue False
+      _ -> StringValue val
 
--- Function to update a single row in a DataFrame
-updateRow :: [(String, Int)] -> DataFrame -> [(ColumnName, InsertValues)] -> Row -> Row
-updateRow columnIndexMap table updates row =
-  let updatedRow = foldl (\r (columnName, value) -> updateColumn r table columnName value) row updates
-   in updatedRow
+    getColumnByName :: ColumnName -> [Column] -> Maybe Column
+    getColumnByName name cols = find (\(Column n _) -> map toLower n == map toLower name) cols
 
--- Function to update a single value in a row
-updateColumn :: Row -> DataFrame -> ColumnName -> InsertValues -> Row
-updateColumn row table columnName value =
-  let columnIndexMap = mapColumnIndex (columns table)  -- Compute columnIndexMap based on the columns of the table
-  in case lookup columnName columnIndexMap of
-    Just index -> case columns table !! index of
-      Column _ columnType -> case parseColumnType columnType value of
-        Just parsedValue -> take index row ++ [parsedValue] ++ drop (index + 1) row
-        Nothing -> row -- Failed to parse value, leave the row unchanged
-      _ -> row -- Invalid column type
-    Nothing -> row -- Column not found in the DataFrame
+    columnName :: Column -> ColumnName
+    columnName (Column name _) = name
 
-parseColumnType :: ColumnType -> InsertValues -> Maybe Value
-parseColumnType IntegerType str = case reads str of
-  [(intValue, "")] -> Just $ IntegerValue intValue
-  _ -> Nothing
-parseColumnType StringType str = Just $ StringValue str
-parseColumnType BoolType str = case map toLower str of
-  "true" -> Just $ BoolValue True
-  "false" -> Just $ BoolValue False
-  _ -> Nothing
--- Add cases for other column types as needed
+updateDataFrame :: ParsedStatement -> DataFrame -> Either ErrorMessage DataFrame
+updateDataFrame (Update tableName updates condition) existingDataFrame =
+  case extractConditionParts condition of
+    ("id", value) -> do
+      let idColumnIndex = getColumnIndex existingDataFrame "id"
+      case idColumnIndex of
+        Just idIndex ->
+          let updatedRows = map (updateRow idIndex existingDataFrame updates condition value) (dataRows existingDataFrame)
+              updatedDataFrame = DataFrame (columns existingDataFrame) updatedRows
+          in
+            -- Change this part to encode the updated DataFrame before returning
+            let result = unsafePerformIO $ do
+                  encodeDataFrame updatedDataFrame tableName
+                  return $ Right updatedDataFrame
+            in seq result (return updatedDataFrame)
+        Nothing -> Left "Error: 'id' column not found in the DataFrame"
+    _ -> Left "Error: Unsupported condition column in WHERE clause"
+  where
+    updateRow :: Int -> DataFrame -> [(ColumnName, InsertValues)] -> String -> String -> Row -> Row
+    updateRow idIndex df updates conditionValue idValue row =
+      if checkCondition row idIndex conditionValue idValue
+        then foldl (\r (columnName, value) -> updateColumn r df columnName value idIndex) row updates
+        else row
 
--- Helper function to check if the SQL statement contains an "UPDATE" keyword
+    -- Add this function to update a specific column in a row
+    updateColumn :: Row -> DataFrame -> ColumnName -> InsertValues -> Int -> Row
+    updateColumn row existingDataFrame columnName value idIndex =
+      case getColumnByName columnName (columns existingDataFrame) of
+        Just (Column _ columnType) -> case parseColumnType columnType value of
+          Just parsedValue -> updateAtIndex (Just idIndex) row parsedValue
+          Nothing -> row
+        _ -> row
+
+    updateAtIndex :: Maybe Int -> Row -> Value -> Row
+    updateAtIndex (Just index) row value =
+      take index row ++ [value] ++ drop (index + 1) row
+    updateAtIndex _ row _ = row
+
+    parseColumnType :: ColumnType -> InsertValues -> Maybe Value
+    parseColumnType IntegerType str = case reads str of
+      [(intValue, "")] -> Just $ IntegerValue intValue
+      _ -> Nothing
+    parseColumnType StringType str = Just $ StringValue str
+    parseColumnType BoolType str = case map toLower str of
+      "true" -> Just $ BoolValue True
+      "false" -> Just $ BoolValue False
+      _ -> Nothing
+
+    checkCondition :: Row -> Int -> String -> String -> Bool
+    checkCondition row idIndex conditionValue idValue =
+      case (row !! idIndex, conditionValue) of
+        (IntegerValue intValue, _) -> show intValue == idValue
+        _ -> False
+
+    getColumnByName :: ColumnName -> [Column] -> Maybe Column
+    getColumnByName name cols = find (\(Column n _) -> map toLower n == map toLower name) cols
+
 containsUpdate :: String -> Bool
 containsUpdate input = "update" `elem` words (map toLower input)
 
-
--- Parse UPDATE statements
 updateParser :: String -> Either ErrorMessage ParsedStatement
 updateParser sql =
   case containsUpdate sql of
@@ -539,10 +645,6 @@ parseUpdatePairs (column : "=" : value : rest) =
   (map toLower column, value) : parseUpdatePairs rest
 parseUpdatePairs _ = error "Invalid format in the SET clause"
 
-
-containsDelete :: String -> Bool
-containsDelete input = "delete" `elem` words (map toLower input)
-
 -- Update extractColumnNamesAndValues
 extractColumnNamesAndValues :: DataFrame -> ([ColumnName], [InsertValues])
 extractColumnNamesAndValues table =
@@ -553,34 +655,20 @@ extractColumnNamesAndValues table =
       in (colNames, values)
     _ -> ([], [])
 
+updateAtIndex :: Maybe Int -> Row -> Value -> Row
+updateAtIndex (Just index) row value =
+  take index row ++ [value] ++ drop (index + 1) row
+updateAtIndex _ row _ = row
 
--- Update the deleteParser function
-deleteParser :: String -> Either ErrorMessage ParsedStatement
-deleteParser sql =
-  case containsDelete sql of
-    True -> do
-      let sqlWithoutDelete = dropWord sql
-      case "from" `elem` words (map toLower sqlWithoutDelete) of
-        True -> do
-          let sqlWithoutFrom = dropWord sqlWithoutDelete
-          case extractTableName sqlWithoutFrom of
-            Right tableName -> do
-              let sqlWithoutTableName = dropWord sqlWithoutFrom
-              case "where" `elem` words (map toLower sqlWithoutTableName) of
-                True -> do
-                  let sqlWithoutWhere = dropWord sqlWithoutTableName
-                  let (condition, rest) = break (== "where") (words sqlWithoutWhere)
-                  case condition of
-                    [] -> Left "Error: Missing condition in WHERE clause"
-                    _ -> do
-                      let parsedCondition = unwords condition
-                      -- Now, let's retrieve column names and values for the specified condition
-                      case createDataFrameFromFiles (Select [] [tableName] True parsedCondition) of
-                        Right dataFrame ->
-                          let (colNames, values) = extractColumnNamesAndValues dataFrame
-                           in Right (Delete tableName colNames values parsedCondition)
-                        Left errorMessage -> Left errorMessage
-                False -> Right (Delete tableName [] [] "")
-            Left errorMessage -> Left errorMessage
-        False -> Left "Error: Missing FROM clause in DELETE statement"
-    False -> Left "Error: SQL statement does not contain 'delete'"
+-- ... existing functions ...
+
+-- Add this function to parse the column type when updating
+parseColumnType :: ColumnType -> InsertValues -> Maybe Value
+parseColumnType IntegerType str = case reads str of
+  [(intValue, "")] -> Just $ IntegerValue intValue
+  _ -> Nothing
+parseColumnType StringType str = Just $ StringValue str
+parseColumnType BoolType str = case map toLower str of
+  "true" -> Just $ BoolValue True
+  "false" -> Just $ BoolValue False
+  _ -> Nothing    
