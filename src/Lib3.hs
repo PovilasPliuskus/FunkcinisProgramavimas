@@ -47,10 +47,13 @@ type ColumnName = String
 
 type InsertValues = String
 
+type UpdateValues = String
+
 data ParsedStatement
   = ParsedStatement
   | Select [ColumnName] [TableName] ContainsWhere Condition
   | Insert TableName [ColumnName] [InsertValues]
+  | Update TableName [(ColumnName, UpdateValues)] Condition
   | Delete TableName Condition
   deriving (Show, Eq)
 
@@ -88,6 +91,15 @@ executeSql sql
           case readDataFrameFromYAML tableName of
             Right existingDataFrame -> do
               let updatedDataFrame = deleteFromDataFrame (Delete tableName condition) existingDataFrame
+              return updatedDataFrame
+            Left errorMessage -> return $ Left errorMessage
+        Left errorMessage -> return $ Left errorMessage
+  | containsUpdate sql = do
+      case updateParser sql of
+        Right (Update tableName updates condition) -> do
+          case readDataFrameFromYAML tableName of
+            Right existingDataFrame -> do
+              let updatedDataFrame = updateDataFrame (Update tableName updates condition) existingDataFrame
               return updatedDataFrame
             Left errorMessage -> return $ Left errorMessage
         Left errorMessage -> return $ Left errorMessage
@@ -131,6 +143,11 @@ containsFrom input = case words (map toLower input) of
 containsInsert :: String -> Bool
 containsInsert input = case words (map toLower input) of
   ("insert" : _) -> True
+  _ -> False
+
+containsUpdate :: String -> Bool
+containsUpdate input = case words (map toLower input) of
+  ("update" : _) -> True
   _ -> False
 
 containsInto :: String -> Bool
@@ -469,6 +486,42 @@ deleteFromDataFrame (Delete tableName condition) (DataFrame existingColumns exis
         (BoolValue bool, "false") -> not bool
         _ -> False
 
+containsSet :: String -> Bool
+containsSet input = case words (map toLower input) of
+  ("set" : _) -> True
+  _ -> False
+
+parseUpdatePairs :: [String] -> [(ColumnName, InsertValues)]
+parseUpdatePairs [] = []
+parseUpdatePairs (column : "=" : value : rest) =
+  (map toLower column, value) : parseUpdatePairs rest
+parseUpdatePairs _ = error "Invalid format in the SET clause"
+
+updateParser :: String -> Either ErrorMessage ParsedStatement
+updateParser sql =
+  case containsUpdate sql of
+    True -> do
+      let sqlWithoutUpdate = dropWord sql
+      case extractTableName sqlWithoutUpdate of
+        Right tableName -> do
+          let sqlWithoutTableName = dropWord sqlWithoutUpdate
+          case "set" `elem` words (map toLower sqlWithoutTableName) of
+            True -> do
+              let sqlWithoutSet = dropWord sqlWithoutTableName
+              let (updates, rest) = break (== "where") (words (map toLower sqlWithoutSet))
+              case updates of
+                [] -> Left "Error: No updates found in the SET clause"
+                _ -> do
+                  let parsedUpdates = parseUpdatePairs updates
+                  case rest of
+                    ("where" : condition) -> do
+                      let parsedCondition = unwords condition
+                      Right (Update tableName parsedUpdates parsedCondition)
+                    _ -> Left "Error: Missing WHERE clause in UPDATE statement"
+            False -> Left "Error: Missing SET clause in UPDATE statement"
+        Left errorMessage -> Left errorMessage
+    False -> Left "Error: SQL statement does not contain 'update'"
+
 insertParser :: String -> Either ErrorMessage ParsedStatement
 insertParser sql =
   case containsInsert sql of
@@ -542,3 +595,72 @@ insertToDataFrame (Insert tableName columns values) (DataFrame existingColumns e
 
     columnName :: Column -> ColumnName
     columnName (Column name _) = name
+
+updateDataFrame :: ParsedStatement -> DataFrame -> Either ErrorMessage DataFrame
+updateDataFrame (Update tableName updates condition) (DataFrame existingColumns existingRows) =
+  case extractConditionParts condition of
+    (column, value) -> do
+      let columnIndex = getColumnIndex (DataFrame existingColumns []) column
+      case columnIndex of
+        Just index -> do
+          let updatedRows = map (updateRow updates index value) existingRows
+              updatedDataFrame = DataFrame existingColumns updatedRows
+          -- Use unsafePerformIO to perform the IO action inside the Either monad
+          let result = unsafePerformIO $ do
+                encodeDataFrame updatedDataFrame tableName
+                return $ Right updatedDataFrame
+          seq result (return updatedDataFrame)
+        Nothing -> Left "Error: Column not found in the DataFrame"
+  where
+    updateRow :: [(ColumnName, UpdateValues)] -> Int -> String -> Row -> Row
+    updateRow updates index value row =
+      let updatedRow = foldl (\acc (col, newVal) -> updateCell col newVal acc) row updates
+       in if checkCondition updatedRow index value then updatedRow else row
+
+    updateCell :: ColumnName -> UpdateValues -> Row -> Row
+    updateCell col newVal row =
+      case getColumnIndex (DataFrame existingColumns []) col of
+        Just colIndex ->
+          let parsedValue = parseUpdateValue colIndex newVal
+           in case parsedValue of
+                Just updatedValue -> replaceAtIndex colIndex updatedValue row
+                Nothing -> row
+        Nothing -> row
+
+    parseUpdateValue :: Int -> UpdateValues -> Maybe Value
+    parseUpdateValue index newVal =
+      case getColumnByIndex (DataFrame existingColumns []) index of
+        Just (Column _ colType) -> Just (parseTypedValue colType newVal)
+        Nothing -> Nothing
+
+    parseTypedValue :: ColumnType -> UpdateValues -> Value
+    parseTypedValue IntegerType newVal = case reads newVal of
+      [(intVal, "")] -> IntegerValue intVal
+      _ -> StringValue newVal
+    parseTypedValue StringType newVal = StringValue newVal
+    parseTypedValue BoolType newVal = case map toLower newVal of
+      "true" -> BoolValue True
+      "false" -> BoolValue False
+      _ -> StringValue newVal
+
+    getColumnByIndex :: DataFrame -> Int -> Maybe Column
+    getColumnByIndex (DataFrame columns _) index =
+      if index >= 0 && index < length columns
+        then Just (columns !! index)
+        else Nothing
+
+    checkCondition :: Row -> Int -> String -> Bool
+    checkCondition row columnIndex conditionValue =
+      case (row !! columnIndex, conditionValue) of
+        (StringValue str, _) -> map toLower str == map toLower conditionValue
+        (IntegerValue int, _) -> show int == conditionValue
+        (BoolValue bool, "true") -> bool
+        (BoolValue bool, "false") -> not bool
+        _ -> False
+
+    replaceAtIndex :: Int -> a -> [a] -> [a]
+    replaceAtIndex n newVal xs = take n xs ++ [newVal] ++ drop (n + 1) xs
+
+    getColumnIndex :: DataFrame -> ColumnName -> Maybe Int
+    getColumnIndex (DataFrame columns _) columnName =
+      elemIndex columnName (map (\(Column name _) -> name) columns)

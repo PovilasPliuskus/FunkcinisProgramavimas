@@ -6,13 +6,13 @@
     - StringType
 - - - contents: 1
       tag: IntegerValue
-    - contents: Vi
+    - contents: petras
       tag: StringValue
     - contents: Po
       tag: StringValue
   - - contents: 2
       tag: IntegerValue
-    - contents: Ed
+    - contents: jonas
       tag: StringValue
     - contents: Dl
       tag: StringValue
@@ -20,5 +20,5 @@
       tag: IntegerValue
     - contents: jonas
       tag: StringValue
-    - contents: jonaitis
+    - contents: aaa
       tag: StringValue
