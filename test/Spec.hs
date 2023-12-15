@@ -1,11 +1,14 @@
 import Control.Monad.Free (Free (..), liftF)
 import Data.Either
+import Data.Either (Either (Right))
 import Data.IORef
 import Data.Maybe ()
 import DataFrame (Column (..), ColumnType (..), DataFrame (..), Value (..))
 import InMemoryTables qualified as D
 import Lib1
 import Lib2
+import Lib3
+import Lib3 (ParsedStatement (Delete, Update), deleteFromDataFrame, updateDataFrame)
 import Lib3 qualified
 import Test.Hspec
 import Text.ParserCombinators.ReadPrec (step)
@@ -90,6 +93,61 @@ main = hspec $ do
       case Lib2.parseStatement "SELECT id, name, surname FROM employees WHERE name = Ed AND surname = Dl" of
         Left err -> err `shouldBe` "should have successfully parsed"
         Right ps -> Lib2.executeStatement ps `shouldBe` Right whereAndTableTest
+  describe "Lib3.insertParser" $ do
+    it "parses a valid INSERT statement with values" $ do
+      let sql = "insert into employees (id, name, surname) values (3, 'Jonas', 'Jonaitis')"
+      Lib3.insertParser sql `shouldBe` Right (Lib3.Insert "employees" ["id", "name", "surname"] ["3", "'Jonas'", "'Jonaitis'"])
+
+    it "handles missing 'insert'" $ do
+      let sql = "into employees (id, name, surname) values (3, 'Jonas', 'Jonaitis')"
+      Lib3.insertParser sql `shouldBe` Left "Error: SQL statement does not contain 'insert'"
+
+    it "handles missing 'into'" $ do
+      let sql = "insert employees (id, name, surname) values (3, 'Jonas', 'Jonaitis')"
+      Lib3.insertParser sql `shouldBe` Left "Error: SQL statement does not contain 'into'"
+
+    it "handles missing opening brace" $ do
+      let sql = "insert into employees id, name, surname) values (3, 'Jonas', 'Jonaitis')"
+      Lib3.insertParser sql `shouldBe` Left "Error: Missing opening brace"
+
+  describe "Lib3.updateParser" $ do
+    it "parses a valid UPDATE statement with SET and WHERE clauses" $ do
+      let sql = "update employees set name = 'John' where id = 1;"
+      Lib3.updateParser sql `shouldBe` Right (Lib3.Update "employees" [("name", "'john'")] "id = 1;")
+
+    it "handles missing 'update'" $ do
+      let sql = "employees set name = 'John' where id = 1;"
+      Lib3.updateParser sql `shouldBe` Left "Error: SQL statement does not contain 'update'"
+
+    it "handles missing SET clause" $ do
+      let sql = "update employees where id = 1;"
+      Lib3.updateParser sql `shouldBe` Left "Error: Missing SET clause in UPDATE statement"
+
+    it "handles missing WHERE clause" $ do
+      let sql = "update employees set name = 'John';"
+      Lib3.updateParser sql `shouldBe` Left "Error: Missing WHERE clause in UPDATE statement"
+
+  describe "Lib3.deleteParser" $ do
+    it "parses a valid DELETE statement with WHERE clause" $ do
+      let sql = "delete from employees where id = 1;"
+      Lib3.deleteParser sql `shouldBe` Right (Lib3.Delete "employees" "id = 1")
+
+    it "handles missing 'delete'" $ do
+      let sql = "from employees where id = 1;"
+      Lib3.deleteParser sql `shouldBe` Left "Error: SQL statement does not contain 'delete'"
+
+    it "handles missing FROM clause" $ do
+      let sql = "delete employees where id = 1;"
+      Lib3.deleteParser sql `shouldBe` Left "Error: DELETE statement does not contain 'from'"
+
+    it "handles missing WHERE clause" $ do
+      let sql = "delete from employees;"
+      Lib3.deleteParser sql `shouldBe` Right (Lib3.Delete "employees;" "")
+
+    it "handles missing trailing semicolon in WHERE clause" $ do
+      let sql = "delete from employees where id = 1"
+      Lib3.deleteParser sql `shouldBe` Right (Lib3.Delete "employees" "id = 1")
+
   describe "Lib3.executeSql" $ do
     it "Selects column with WHERE criteria" $ do
       db <- setupDB
@@ -99,6 +157,84 @@ main = hspec $ do
       db <- setupDB
       df <- runExecuteIO db (Lib3.executeSql "SELECT id, name, surname FROM employees;")
       df `shouldBe` Right (DataFrame [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType] [[IntegerValue 1, StringValue "Vi", StringValue "Po"], [IntegerValue 2, StringValue "Ed", StringValue "Dl"]])
+  describe "Lib3.insertToDataFrame" $ do
+    it "Inserts values into the DataFrame correctly" $ do
+      let initialDataFrame = initialTableEmployees
+          result = insertToDataFrame (Insert "employees" ["id", "name", "surname"] ["3", "Jo", "Ka"]) initialDataFrame
+          expectedDataFrame = firstInsertTableEmployees
+      result `shouldBe` Right expectedDataFrame
+    it "Finds the invalid number of Columns" $ do
+      let initialDataFrame = initialTableEmployees
+          result = insertToDataFrame (Insert "employees" ["id", "name", "surname"] ["3", "Jo"]) initialDataFrame
+      result `shouldSatisfy` isLeft
+  describe "Lib3.updateDataFrame" $ do
+    it "Updates a value in the DataFrame correctly" $ do
+      let initialDataFrame = initialTableEmployees
+          result = updateDataFrame (Update "employees" [("surname", "Do")] "id = 1") initialDataFrame
+      result `shouldBe` Right firstUpdateTableEmployees
+    it "Updates several values in the DataFrame correctly" $ do
+      let initialDataFrame = initialTableEmployees
+          result = updateDataFrame (Update "employees" [("surname", "Do"), ("name", "Di")] "id = 1") initialDataFrame
+      result `shouldBe` Right secondUpdateTableEmployees
+  describe "Lib3.deleteFromDataFrame" $ do
+    it "Deletes a value from the DataFrame correctly" $ do
+      let initialDataFrame = initialTableEmployees
+          result = deleteFromDataFrame (Delete "employees" "name = Ed") initialDataFrame
+      result `shouldBe` Right firstDeleteTableEmployees
+    it "Deletes multiple values from the DataFrame correctly" $ do
+      let initialDataFrame = repetitiveTableEmployees
+          result = deleteFromDataFrame (Delete "employees" "surname = Ka") initialDataFrame
+      result `shouldBe` Right initialTableEmployees
+
+initialTableEmployees :: DataFrame
+initialTableEmployees =
+  DataFrame
+    [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType]
+    [ [IntegerValue 1, StringValue "Vi", StringValue "Po"],
+      [IntegerValue 2, StringValue "Ed", StringValue "Dl"]
+    ]
+
+repetitiveTableEmployees :: DataFrame
+repetitiveTableEmployees =
+  DataFrame
+    [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType]
+    [ [IntegerValue 1, StringValue "Vi", StringValue "Po"],
+      [IntegerValue 2, StringValue "Ed", StringValue "Dl"],
+      [IntegerValue 3, StringValue "Jo", StringValue "Ka"],
+      [IntegerValue 4, StringValue "Pe", StringValue "Ka"]
+    ]
+
+firstInsertTableEmployees :: DataFrame
+firstInsertTableEmployees =
+  DataFrame
+    [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType]
+    [ [IntegerValue 1, StringValue "Vi", StringValue "Po"],
+      [IntegerValue 2, StringValue "Ed", StringValue "Dl"],
+      [IntegerValue 3, StringValue "Jo", StringValue "Ka"]
+    ]
+
+firstUpdateTableEmployees :: DataFrame
+firstUpdateTableEmployees =
+  DataFrame
+    [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType]
+    [ [IntegerValue 1, StringValue "Vi", StringValue "Do"],
+      [IntegerValue 2, StringValue "Ed", StringValue "Dl"]
+    ]
+
+secondUpdateTableEmployees :: DataFrame
+secondUpdateTableEmployees =
+  DataFrame
+    [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType]
+    [ [IntegerValue 1, StringValue "Di", StringValue "Do"],
+      [IntegerValue 2, StringValue "Ed", StringValue "Dl"]
+    ]
+
+firstDeleteTableEmployees :: DataFrame
+firstDeleteTableEmployees =
+  DataFrame
+    [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType]
+    [ [IntegerValue 1, StringValue "Vi", StringValue "Po"]
+    ]
 
 showTablesTest :: DataFrame
 showTablesTest =
