@@ -47,10 +47,13 @@ type ColumnName = String
 
 type InsertValues = String
 
+type UpdateValues = String
+
 data ParsedStatement
   = ParsedStatement
   | Select [ColumnName] [TableName] ContainsWhere Condition
   | Insert TableName [ColumnName] [InsertValues]
+  | Update TableName [(ColumnName, UpdateValues)] Condition
   | Delete TableName Condition
   deriving (Show, Eq)
 
@@ -131,6 +134,11 @@ containsFrom input = case words (map toLower input) of
 containsInsert :: String -> Bool
 containsInsert input = case words (map toLower input) of
   ("insert" : _) -> True
+  _ -> False
+
+containsUpdate :: String -> Bool
+containsUpdate input = case words (map toLower input) of
+  ("update" : _) -> True
   _ -> False
 
 containsInto :: String -> Bool
@@ -468,6 +476,42 @@ deleteFromDataFrame (Delete tableName condition) (DataFrame existingColumns exis
         (BoolValue bool, "true") -> bool
         (BoolValue bool, "false") -> not bool
         _ -> False
+
+containsSet :: String -> Bool
+containsSet input = case words (map toLower input) of
+  ("set" : _) -> True
+  _ -> False
+
+parseUpdatePairs :: [String] -> [(ColumnName, InsertValues)]
+parseUpdatePairs [] = []
+parseUpdatePairs (column : "=" : value : rest) =
+  (map toLower column, value) : parseUpdatePairs rest
+parseUpdatePairs _ = error "Invalid format in the SET clause"
+
+updateParser :: String -> Either ErrorMessage ParsedStatement
+updateParser sql =
+  case containsUpdate sql of
+    True -> do
+      let sqlWithoutUpdate = dropWord sql
+      case extractTableName sqlWithoutUpdate of
+        Right tableName -> do
+          let sqlWithoutTableName = dropWord sqlWithoutUpdate
+          case "set" `elem` words (map toLower sqlWithoutTableName) of
+            True -> do
+              let sqlWithoutSet = dropWord sqlWithoutTableName
+              let (updates, rest) = break (== "where") (words (map toLower sqlWithoutSet))
+              case updates of
+                [] -> Left "Error: No updates found in the SET clause"
+                _ -> do
+                  let parsedUpdates = parseUpdatePairs updates
+                  case rest of
+                    ("where" : condition) -> do
+                      let parsedCondition = unwords condition
+                      Right (Update tableName parsedUpdates parsedCondition)
+                    _ -> Left "Error: Missing WHERE clause in UPDATE statement"
+            False -> Left "Error: Missing SET clause in UPDATE statement"
+        Left errorMessage -> Left errorMessage
+    False -> Left "Error: SQL statement does not contain 'update'"
 
 insertParser :: String -> Either ErrorMessage ParsedStatement
 insertParser sql =
