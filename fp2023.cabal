@@ -138,6 +138,7 @@ test-suite fp2023-test
     , base >=4.7 && <5
     , bytestring >=0.11.4.0
     , fp2023
+    , free
     , hspec
     , text
     , yaml
