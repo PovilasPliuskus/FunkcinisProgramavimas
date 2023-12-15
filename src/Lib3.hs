@@ -94,6 +94,15 @@ executeSql sql
               return updatedDataFrame
             Left errorMessage -> return $ Left errorMessage
         Left errorMessage -> return $ Left errorMessage
+  | containsUpdate sql = do
+      case updateParser sql of
+        Right (Update tableName updates condition) -> do
+          case readDataFrameFromYAML tableName of
+            Right existingDataFrame -> do
+              let updatedDataFrame = updateDataFrame (Update tableName updates condition) existingDataFrame
+              return updatedDataFrame
+            Left errorMessage -> return $ Left errorMessage
+        Left errorMessage -> return $ Left errorMessage
   | otherwise = do
       case parseSelect sql of
         Right tableName -> do
@@ -586,3 +595,72 @@ insertToDataFrame (Insert tableName columns values) (DataFrame existingColumns e
 
     columnName :: Column -> ColumnName
     columnName (Column name _) = name
+
+updateDataFrame :: ParsedStatement -> DataFrame -> Either ErrorMessage DataFrame
+updateDataFrame (Update tableName updates condition) (DataFrame existingColumns existingRows) =
+  case extractConditionParts condition of
+    (column, value) -> do
+      let columnIndex = getColumnIndex (DataFrame existingColumns []) column
+      case columnIndex of
+        Just index -> do
+          let updatedRows = map (updateRow updates index value) existingRows
+              updatedDataFrame = DataFrame existingColumns updatedRows
+          -- Use unsafePerformIO to perform the IO action inside the Either monad
+          let result = unsafePerformIO $ do
+                encodeDataFrame updatedDataFrame tableName
+                return $ Right updatedDataFrame
+          seq result (return updatedDataFrame)
+        Nothing -> Left "Error: Column not found in the DataFrame"
+  where
+    updateRow :: [(ColumnName, UpdateValues)] -> Int -> String -> Row -> Row
+    updateRow updates index value row =
+      let updatedRow = foldl (\acc (col, newVal) -> updateCell col newVal acc) row updates
+       in if checkCondition updatedRow index value then updatedRow else row
+
+    updateCell :: ColumnName -> UpdateValues -> Row -> Row
+    updateCell col newVal row =
+      case getColumnIndex (DataFrame existingColumns []) col of
+        Just colIndex ->
+          let parsedValue = parseUpdateValue colIndex newVal
+           in case parsedValue of
+                Just updatedValue -> replaceAtIndex colIndex updatedValue row
+                Nothing -> row
+        Nothing -> row
+
+    parseUpdateValue :: Int -> UpdateValues -> Maybe Value
+    parseUpdateValue index newVal =
+      case getColumnByIndex (DataFrame existingColumns []) index of
+        Just (Column _ colType) -> Just (parseTypedValue colType newVal)
+        Nothing -> Nothing
+
+    parseTypedValue :: ColumnType -> UpdateValues -> Value
+    parseTypedValue IntegerType newVal = case reads newVal of
+      [(intVal, "")] -> IntegerValue intVal
+      _ -> StringValue newVal
+    parseTypedValue StringType newVal = StringValue newVal
+    parseTypedValue BoolType newVal = case map toLower newVal of
+      "true" -> BoolValue True
+      "false" -> BoolValue False
+      _ -> StringValue newVal
+
+    getColumnByIndex :: DataFrame -> Int -> Maybe Column
+    getColumnByIndex (DataFrame columns _) index =
+      if index >= 0 && index < length columns
+        then Just (columns !! index)
+        else Nothing
+
+    checkCondition :: Row -> Int -> String -> Bool
+    checkCondition row columnIndex conditionValue =
+      case (row !! columnIndex, conditionValue) of
+        (StringValue str, _) -> map toLower str == map toLower conditionValue
+        (IntegerValue int, _) -> show int == conditionValue
+        (BoolValue bool, "true") -> bool
+        (BoolValue bool, "false") -> not bool
+        _ -> False
+
+    replaceAtIndex :: Int -> a -> [a] -> [a]
+    replaceAtIndex n newVal xs = take n xs ++ [newVal] ++ drop (n + 1) xs
+
+    getColumnIndex :: DataFrame -> ColumnName -> Maybe Int
+    getColumnIndex (DataFrame columns _) columnName =
+      elemIndex columnName (map (\(Column name _) -> name) columns)
