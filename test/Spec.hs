@@ -1,10 +1,14 @@
+import Control.Monad.Free (Free (..), liftF)
 import Data.Either
+import Data.IORef
 import Data.Maybe ()
 import DataFrame (Column (..), ColumnType (..), DataFrame (..), Value (..))
 import InMemoryTables qualified as D
 import Lib1
 import Lib2
+import Lib3 qualified
 import Test.Hspec
+import Text.ParserCombinators.ReadPrec (step)
 
 main :: IO ()
 main = hspec $ do
@@ -86,6 +90,15 @@ main = hspec $ do
       case Lib2.parseStatement "SELECT id, name, surname FROM employees WHERE name = Ed AND surname = Dl" of
         Left err -> err `shouldBe` "should have successfully parsed"
         Right ps -> Lib2.executeStatement ps `shouldBe` Right whereAndTableTest
+  describe "Lib3.executeSql" $ do
+    it "Selects column with WHERE criteria" $ do
+      db <- setupDB
+      df <- runExecuteIO db (Lib3.executeSql "SELECT id from employees WHERE id = 1;")
+      df `shouldBe` Right (DataFrame [Column "id" IntegerType] [[IntegerValue 1]])
+    it "Selects all columns without WHERE criteria" $ do
+      db <- setupDB
+      df <- runExecuteIO db (Lib3.executeSql "SELECT id, name, surname FROM employees;")
+      df `shouldBe` Right (DataFrame [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType] [[IntegerValue 1, StringValue "Vi", StringValue "Po"], [IntegerValue 2, StringValue "Ed", StringValue "Dl"]])
 
 showTablesTest :: DataFrame
 showTablesTest =
@@ -143,3 +156,27 @@ whereAndTableTest =
     [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType]
     [ [IntegerValue 2, StringValue "Ed", StringValue "Dl"]
     ]
+
+type Database = [(String, IORef String)]
+
+setupDB :: IO Main.Database
+setupDB = do
+  employees <- newIORef "employees: [[id, IntegerType, name, StringType, surname, StringType], [[contents: 1, tag: IntegerValue, contents: Vi, tag: StringValue, contents: Po, tag: StringValue], [contents: 2, tag: IntegerValue, contents: Ed, tag: StringValue, contents: Dl, tag: StringValue]]]"
+  flags <- newIORef "flags: [[id, IntegerType, flag, StringType, value, BoolType], [[contents: 1, tag: IntegerValue, contents: a, tag: StringValue, contents: true, tag: BoolValue], [contents: 1, tag: IntegerValue, contents: b, tag: StringValue, contents: true, tag: BoolValue], [contents: 2, tag: IntegerValue, contents: b, tag: StringValue, contents: null, tag: NullValue], [contents: 2, tag: IntegerValue, contents: b, tag: StringValue, contents: false, tag: BoolValue]]]"
+  return [("employees", employees), ("flags", flags)]
+
+runExecuteIO :: Main.Database -> Lib3.Execution a -> IO a
+runExecuteIO _ (Pure a) = return a
+runExecuteIO db (Free step) = do
+  next <- runStep step
+  runExecuteIO db next
+  where
+    runStep :: Lib3.ExecutionAlgebra a -> IO a
+    runStep (Lib3.LoadFile tableName next) = do
+      case Prelude.lookup tableName db of
+        Just result -> do
+          content <- readIORef result
+          return content >>= return . next
+        Nothing -> do
+          putStrLn $ "\n Table not found"
+          return "" >>= return . next

@@ -6,19 +6,13 @@
     - StringType
 - - - contents: 1
       tag: IntegerValue
-    - contents: petras
+    - contents: Vi
       tag: StringValue
     - contents: Po
       tag: StringValue
   - - contents: 2
       tag: IntegerValue
-    - contents: jonas
+    - contents: Ed
       tag: StringValue
     - contents: Dl
-      tag: StringValue
-  - - contents: 22
-      tag: IntegerValue
-    - contents: jonas
-      tag: StringValue
-    - contents: aaa
       tag: StringValue
