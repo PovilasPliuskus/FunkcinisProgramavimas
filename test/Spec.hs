@@ -1,11 +1,14 @@
 import Control.Monad.Free (Free (..), liftF)
 import Data.Either
+import Data.Either (Either (Right))
 import Data.IORef
 import Data.Maybe ()
 import DataFrame (Column (..), ColumnType (..), DataFrame (..), Value (..))
 import InMemoryTables qualified as D
 import Lib1
 import Lib2
+import Lib3
+import Lib3 (ParsedStatement (Delete, Update), deleteFromDataFrame, updateDataFrame)
 import Lib3 qualified
 import Test.Hspec
 import Text.ParserCombinators.ReadPrec (step)
@@ -99,6 +102,84 @@ main = hspec $ do
       db <- setupDB
       df <- runExecuteIO db (Lib3.executeSql "SELECT id, name, surname FROM employees;")
       df `shouldBe` Right (DataFrame [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType] [[IntegerValue 1, StringValue "Vi", StringValue "Po"], [IntegerValue 2, StringValue "Ed", StringValue "Dl"]])
+  describe "Lib3.insertToDataFrame" $ do
+    it "Inserts values into the DataFrame correctly" $ do
+      let initialDataFrame = initialTableEmployees
+          result = insertToDataFrame (Insert "employees" ["id", "name", "surname"] ["3", "Jo", "Ka"]) initialDataFrame
+          expectedDataFrame = firstInsertTableEmployees
+      result `shouldBe` Right expectedDataFrame
+    it "Finds the invalid number of Columns" $ do
+      let initialDataFrame = initialTableEmployees
+          result = insertToDataFrame (Insert "employees" ["id", "name", "surname"] ["3", "Jo"]) initialDataFrame
+      result `shouldSatisfy` isLeft
+  describe "Lib3.updateDataFrame" $ do
+    it "Updates a value in the DataFrame correctly" $ do
+      let initialDataFrame = initialTableEmployees
+          result = updateDataFrame (Update "employees" [("surname", "Do")] "id = 1") initialDataFrame
+      result `shouldBe` Right firstUpdateTableEmployees
+    it "Updates several values in the DataFrame correctly" $ do
+      let initialDataFrame = initialTableEmployees
+          result = updateDataFrame (Update "employees" [("surname", "Do"), ("name", "Di")] "id = 1") initialDataFrame
+      result `shouldBe` Right secondUpdateTableEmployees
+  describe "Lib3.deleteFromDataFrame" $ do
+    it "Deletes a value from the DataFrame correctly" $ do
+      let initialDataFrame = initialTableEmployees
+          result = deleteFromDataFrame (Delete "employees" "name = Ed") initialDataFrame
+      result `shouldBe` Right firstDeleteTableEmployees
+    it "Deletes multiple values from the DataFrame correctly" $ do
+      let initialDataFrame = repetitiveTableEmployees
+          result = deleteFromDataFrame (Delete "employees" "surname = Ka") initialDataFrame
+      result `shouldBe` Right initialTableEmployees
+
+initialTableEmployees :: DataFrame
+initialTableEmployees =
+  DataFrame
+    [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType]
+    [ [IntegerValue 1, StringValue "Vi", StringValue "Po"],
+      [IntegerValue 2, StringValue "Ed", StringValue "Dl"]
+    ]
+
+repetitiveTableEmployees :: DataFrame
+repetitiveTableEmployees =
+  DataFrame
+    [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType]
+    [ [IntegerValue 1, StringValue "Vi", StringValue "Po"],
+      [IntegerValue 2, StringValue "Ed", StringValue "Dl"],
+      [IntegerValue 3, StringValue "Jo", StringValue "Ka"],
+      [IntegerValue 4, StringValue "Pe", StringValue "Ka"]
+    ]
+
+firstInsertTableEmployees :: DataFrame
+firstInsertTableEmployees =
+  DataFrame
+    [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType]
+    [ [IntegerValue 1, StringValue "Vi", StringValue "Po"],
+      [IntegerValue 2, StringValue "Ed", StringValue "Dl"],
+      [IntegerValue 3, StringValue "Jo", StringValue "Ka"]
+    ]
+
+firstUpdateTableEmployees :: DataFrame
+firstUpdateTableEmployees =
+  DataFrame
+    [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType]
+    [ [IntegerValue 1, StringValue "Vi", StringValue "Do"],
+      [IntegerValue 2, StringValue "Ed", StringValue "Dl"]
+    ]
+
+secondUpdateTableEmployees :: DataFrame
+secondUpdateTableEmployees =
+  DataFrame
+    [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType]
+    [ [IntegerValue 1, StringValue "Di", StringValue "Do"],
+      [IntegerValue 2, StringValue "Ed", StringValue "Dl"]
+    ]
+
+firstDeleteTableEmployees :: DataFrame
+firstDeleteTableEmployees =
+  DataFrame
+    [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType]
+    [ [IntegerValue 1, StringValue "Vi", StringValue "Po"]
+    ]
 
 showTablesTest :: DataFrame
 showTablesTest =

@@ -5,6 +5,10 @@ module Lib3
   ( executeSql,
     Execution,
     ExecutionAlgebra (..),
+    ParsedStatement (..),
+    insertToDataFrame,
+    updateDataFrame,
+    deleteFromDataFrame,
   )
 where
 
