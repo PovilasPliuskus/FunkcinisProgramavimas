@@ -79,7 +79,8 @@ executeSql sql
   | containsInsert sql = do
       case insertParser sql of
         Right (Insert tableName columns values) -> do
-          case readDataFrameFromYAML tableName of
+          df <- readContentFromYAML tableName
+          case df of
             Right existingDataFrame -> do
               let updatedDataFrame = insertToDataFrame (Insert tableName columns values) existingDataFrame
               return updatedDataFrame
@@ -88,7 +89,8 @@ executeSql sql
   | containsDelete sql = do
       case deleteParser sql of
         Right (Delete tableName condition) -> do
-          case readDataFrameFromYAML tableName of
+          df <- readContentFromYAML tableName
+          case df of
             Right existingDataFrame -> do
               let updatedDataFrame = deleteFromDataFrame (Delete tableName condition) existingDataFrame
               return updatedDataFrame
@@ -97,7 +99,8 @@ executeSql sql
   | containsUpdate sql = do
       case updateParser sql of
         Right (Update tableName updates condition) -> do
-          case readDataFrameFromYAML tableName of
+          df <- readContentFromYAML tableName
+          case df of
             Right existingDataFrame -> do
               let updatedDataFrame = updateDataFrame (Update tableName updates condition) existingDataFrame
               return updatedDataFrame
@@ -231,6 +234,13 @@ readDataFrameFromYAML filePath =
     return $ case result of
       Right dataFrame -> Right dataFrame
       Left err -> Left $ "Error decoding YAML from file " ++ fullPath ++ ": " ++ show err
+
+readContentFromYAML :: TableName -> Execution (Either String DataFrame)
+readContentFromYAML tableName = do
+  result <- loadFile tableName
+  case Y.decodeEither' (BS.pack result) of
+    Left err -> return $ Left $ "Failed to deserialize 'database.yaml': " ++ show err
+    Right db -> Pure $ Right db
 
 -- readDataFrameFromJSONPure :: FilePath -> Either String DataFrame
 -- readDataFrameFromJSONPure filePath = do
