@@ -9,6 +9,9 @@ module Lib3
     insertToDataFrame,
     updateDataFrame,
     deleteFromDataFrame,
+    insertParser,
+    updateParser,
+    deleteParser,
   )
 where
 

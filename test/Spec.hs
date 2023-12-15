@@ -93,6 +93,61 @@ main = hspec $ do
       case Lib2.parseStatement "SELECT id, name, surname FROM employees WHERE name = Ed AND surname = Dl" of
         Left err -> err `shouldBe` "should have successfully parsed"
         Right ps -> Lib2.executeStatement ps `shouldBe` Right whereAndTableTest
+  describe "Lib3.insertParser" $ do
+    it "parses a valid INSERT statement with values" $ do
+      let sql = "insert into employees (id, name, surname) values (3, 'Jonas', 'Jonaitis')"
+      Lib3.insertParser sql `shouldBe` Right (Lib3.Insert "employees" ["id", "name", "surname"] ["3", "'Jonas'", "'Jonaitis'"])
+
+    it "handles missing 'insert'" $ do
+      let sql = "into employees (id, name, surname) values (3, 'Jonas', 'Jonaitis')"
+      Lib3.insertParser sql `shouldBe` Left "Error: SQL statement does not contain 'insert'"
+
+    it "handles missing 'into'" $ do
+      let sql = "insert employees (id, name, surname) values (3, 'Jonas', 'Jonaitis')"
+      Lib3.insertParser sql `shouldBe` Left "Error: SQL statement does not contain 'into'"
+
+    it "handles missing opening brace" $ do
+      let sql = "insert into employees id, name, surname) values (3, 'Jonas', 'Jonaitis')"
+      Lib3.insertParser sql `shouldBe` Left "Error: Missing opening brace"
+
+  describe "Lib3.updateParser" $ do
+    it "parses a valid UPDATE statement with SET and WHERE clauses" $ do
+      let sql = "update employees set name = 'John' where id = 1;"
+      Lib3.updateParser sql `shouldBe` Right (Lib3.Update "employees" [("name", "'john'")] "id = 1;")
+
+    it "handles missing 'update'" $ do
+      let sql = "employees set name = 'John' where id = 1;"
+      Lib3.updateParser sql `shouldBe` Left "Error: SQL statement does not contain 'update'"
+
+    it "handles missing SET clause" $ do
+      let sql = "update employees where id = 1;"
+      Lib3.updateParser sql `shouldBe` Left "Error: Missing SET clause in UPDATE statement"
+
+    it "handles missing WHERE clause" $ do
+      let sql = "update employees set name = 'John';"
+      Lib3.updateParser sql `shouldBe` Left "Error: Missing WHERE clause in UPDATE statement"
+
+  describe "Lib3.deleteParser" $ do
+    it "parses a valid DELETE statement with WHERE clause" $ do
+      let sql = "delete from employees where id = 1;"
+      Lib3.deleteParser sql `shouldBe` Right (Lib3.Delete "employees" "id = 1")
+
+    it "handles missing 'delete'" $ do
+      let sql = "from employees where id = 1;"
+      Lib3.deleteParser sql `shouldBe` Left "Error: SQL statement does not contain 'delete'"
+
+    it "handles missing FROM clause" $ do
+      let sql = "delete employees where id = 1;"
+      Lib3.deleteParser sql `shouldBe` Left "Error: DELETE statement does not contain 'from'"
+
+    it "handles missing WHERE clause" $ do
+      let sql = "delete from employees;"
+      Lib3.deleteParser sql `shouldBe` Right (Lib3.Delete "employees;" "")
+
+    it "handles missing trailing semicolon in WHERE clause" $ do
+      let sql = "delete from employees where id = 1"
+      Lib3.deleteParser sql `shouldBe` Right (Lib3.Delete "employees" "id = 1")
+
   describe "Lib3.executeSql" $ do
     it "Selects column with WHERE criteria" $ do
       db <- setupDB
