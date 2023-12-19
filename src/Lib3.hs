@@ -12,6 +12,8 @@ module Lib3
     insertParser,
     updateParser,
     deleteParser,
+    readDataFrameFromYAML,
+    encodeDataFrame,
   )
 where
 
