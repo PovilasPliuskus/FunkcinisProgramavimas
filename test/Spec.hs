@@ -1,6 +1,7 @@
 import Control.Monad.Free (Free (..), liftF)
+import Data.ByteString qualified as BS
 import Data.Either
-import Data.Either (Either (Right))
+import Data.Either (Either (Right), isLeft)
 import Data.IORef
 import Data.Maybe ()
 import DataFrame (Column (..), ColumnType (..), DataFrame (..), Value (..))
@@ -185,6 +186,46 @@ main = hspec $ do
       let initialDataFrame = repetitiveTableEmployees
           result = deleteFromDataFrame (Delete "employees" "surname = Ka") initialDataFrame
       result `shouldBe` Right initialTableEmployees
+  describe "Lib3.readDataFrameFromYAML" $ do
+    it "Deserializes from employees.yaml file to a DataFrame correctly" $ do
+      let tableName = "employees"
+          result = readDataFrameFromYAML tableName
+      result `shouldBe` Right initialTableEmployees
+    it "Deserializes from flags.yaml file to a DataFrame correctly" $ do
+      let tableName = "flags"
+          result = readDataFrameFromYAML tableName
+      result `shouldBe` Right initialTableFlags
+    it "Does not deserialize because table is not found" $ do
+      let tableName = "workers"
+          result = readDataFrameFromYAML tableName
+      result `shouldSatisfy` isLeft
+  describe "Lib.encodeDataFrame" $ do
+    it "Serializes TableEmployees DataFrame to a .yaml file correctly" $ do
+      let tableName = "employees"
+      encodeDataFrame initialTableEmployees tableName
+      encodedContent <- BS.readFile $ "src/db/" ++ tableName ++ ".yaml"
+      let decodedResult = readDataFrameFromYAML tableName
+      case decodedResult of
+        Right decodedDataFrame -> decodedDataFrame `shouldBe` initialTableEmployees
+        Left errorMessage -> fail $ "Failed to decode: " ++ errorMessage
+    it "Serializes TableFlags DataFrame to a .yaml file correctly" $ do
+      let tableName = "flags"
+      encodeDataFrame initialTableFlags tableName
+      encodedContent <- BS.readFile $ "src/db/" ++ tableName ++ ".yaml"
+      let decodedResult = readDataFrameFromYAML tableName
+      case decodedResult of
+        Right decodedDataFrame -> decodedDataFrame `shouldBe` initialTableFlags
+        Left errorMessage -> fail $ "Failed to decode: " ++ errorMessage
+
+initialTableFlags :: DataFrame
+initialTableFlags =
+  DataFrame
+    [Column "flag" StringType, Column "value" BoolType]
+    [ [StringValue "a", BoolValue True],
+      [StringValue "b", BoolValue True],
+      [StringValue "b", NullValue],
+      [StringValue "b", BoolValue False]
+    ]
 
 initialTableEmployees :: DataFrame
 initialTableEmployees =
